@@ -1,0 +1,357 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== USER MANAGEMENT ====================
+
+model User {
+  id                String   @id @default(cuid())
+  email             String   @unique
+  username          String   @unique
+  password          String
+  firstName         String?
+  lastName          String?
+  avatar            String?
+  phone             String?
+  role              UserRole @default(USER)
+  status            UserStatus @default(ACTIVE)
+  emailVerified     Boolean  @default(false)
+  twoFactorEnabled  Boolean  @default(false)
+  lastLoginAt        DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  sessions          Session[]
+  subscriptions     UserSubscription[]
+  securityReports   SecurityReport[]
+  notifications     Notification[]
+  loginLogs         LoginLog[]
+  apiKeys           ApiKey[]
+  auditLogs         AuditLog[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  deviceInfo String?
+  ipAddress String?
+  userAgent String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model LoginLog {
+  id        String   @id @default(cuid())
+  userId    String
+  email     String
+  success   Boolean
+  ipAddress String?
+  userAgent String?
+  reason    String?
+  createdAt DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("login_logs")
+}
+
+// ==================== SERVICE PLANS ====================
+
+model ServicePlan {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  price       Decimal  @db.Decimal(10, 2)
+  currency    String   @default("USD")
+  billingCycle BillingCycle @default(MONTHLY)
+  features    Json     // Store plan features as JSON
+  isActive    Boolean  @default(true)
+  maxUsers    Int?
+  maxStorage  BigInt? // in bytes
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  subscriptions UserSubscription[]
+
+  @@map("service_plans")
+}
+
+model UserSubscription {
+  id            String   @id @default(cuid())
+  userId        String
+  planId        String
+  status        SubscriptionStatus @default(ACTIVE)
+  startDate     DateTime @default(now())
+  endDate       DateTime?
+  autoRenew     Boolean  @default(true)
+  paymentMethod String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan ServicePlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, planId])
+  @@map("user_subscriptions")
+}
+
+// ==================== SECURITY TOOLS ====================
+
+model SecurityTool {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  category    SecurityCategory
+  isActive    Boolean  @default(true)
+  config      Json?    // Tool-specific configuration
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  reports SecurityReport[]
+
+  @@map("security_tools")
+}
+
+model SecurityReport {
+  id        String   @id @default(cuid())
+  userId    String
+  toolId    String
+  title     String
+  content   String
+  severity  SeverityLevel @default(MEDIUM)
+  status    ReportStatus @default(OPEN)
+  metadata  Json?    // Additional report data
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tool SecurityTool @relation(fields: [toolId], references: [id], onDelete: Cascade)
+
+  @@map("security_reports")
+}
+
+model ApiKey {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  key         String   @unique
+  permissions Json?    // API permissions
+  isActive    Boolean  @default(true)
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("api_keys")
+}
+
+// ==================== POST ADS ====================
+
+model AdCampaign {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  content     String
+  targetAudience Json? // Targeting criteria
+  budget      Decimal  @db.Decimal(10, 2)
+  spent       Decimal  @db.Decimal(10, 2) @default(0)
+  status      CampaignStatus @default(DRAFT)
+  startDate   DateTime?
+  endDate     DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  ads Ad[]
+
+  @@map("ad_campaigns")
+}
+
+model Ad {
+  id          String   @id @default(cuid())
+  campaignId  String
+  title       String
+  content     String
+  imageUrl    String?
+  linkUrl     String?
+  status      AdStatus @default(DRAFT)
+  impressions Int      @default(0)
+  clicks      Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  campaign AdCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@map("ads")
+}
+
+// ==================== PUSH NOTIFICATIONS ====================
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String?
+  title     String
+  message   String
+  type      NotificationType
+  data      Json?    // Additional notification data
+  isRead    Boolean  @default(false)
+  sentAt    DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model NotificationTemplate {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  title     String
+  message   String
+  type      NotificationType
+  variables Json?    // Template variables
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("notification_templates")
+}
+
+// ==================== AUDIT & ANALYTICS ====================
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  resource  String
+  details   Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  // Relations
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("audit_logs")
+}
+
+model DashboardMetric {
+  id        String   @id @default(cuid())
+  name      String
+  value     Decimal  @db.Decimal(15, 4)
+  category  String
+  metadata  Json?
+  date      DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  @@map("dashboard_metrics")
+}
+
+// ==================== ENUMS ====================
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  MODERATOR
+  USER
+  CUSTOMER
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING
+}
+
+enum BillingCycle {
+  MONTHLY
+  YEARLY
+  LIFETIME
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  INACTIVE
+  CANCELLED
+  EXPIRED
+  PENDING
+}
+
+enum SecurityCategory {
+  VULNERABILITY_SCANNER
+  PENETRATION_TESTING
+  COMPLIANCE_CHECKER
+  THREAT_DETECTION
+  ACCESS_CONTROL
+  ENCRYPTION
+  MONITORING
+}
+
+enum SeverityLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ReportStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum AdStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+  REJECTED
+}
+
+enum NotificationType {
+  SECURITY_ALERT
+  SYSTEM_UPDATE
+  BILLING_REMINDER
+  FEATURE_ANNOUNCEMENT
+  MAINTENANCE_NOTICE
+  GENERAL
+}
