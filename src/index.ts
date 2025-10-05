@@ -9,7 +9,12 @@ import rateLimit from 'express-rate-limit';
 import { config } from './config/env.config';
 import { errorHandler } from './middlewares/error.middleware';
 import { notFoundHandler } from './middlewares/not-found.middleware';
-import { apiRoutes } from './routes';
+import { RouteFactory } from './factories/route.factory';
+import { container } from './container/container';
+import { RegistrationController } from './modules/controllers/registration.controller';
+import { UserService } from './modules/services/user.service';
+import { EmailService } from './modules/services/email.service';
+import { AuthService } from './modules/services/auth.service';
 
 class Server {
   private app: express.Application;
@@ -64,6 +69,12 @@ class Server {
   }
 
   private initializeRoutes(): void {
+    // Register services in container
+    container.autoRegister(EmailService);
+    container.autoRegister(AuthService);
+    container.autoRegister(UserService);
+    container.autoRegister(RegistrationController);
+
     // Health check endpoint
     this.app.get('/health', (req, res) => {
       res.status(200).json({
@@ -74,8 +85,9 @@ class Server {
       });
     });
 
-    // API routes
-    this.app.use('/api', apiRoutes);
+    // API routes using decorators
+    const apiRoutes = RouteFactory.createRoutes([RegistrationController]);
+    this.app.use('/', apiRoutes);
   }
 
   private initializeErrorHandling(): void {

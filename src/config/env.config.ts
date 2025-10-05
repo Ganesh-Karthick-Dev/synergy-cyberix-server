@@ -56,8 +56,8 @@ const config: Config = {
       const host = process.env.DB_HOST || 'localhost';
       const port = process.env.DB_PORT || '5432';
       const username = process.env.DB_USERNAME || 'postgres';
-      const password = process.env.DB_PASSWORD || 'password';
-      const database = process.env.DB_NAME || 'cyberix_db';
+      const password = process.env.DB_PASSWORD || '12345';
+      const database = process.env.DB_NAME || 'cyberix';
       return `postgresql://${username}:${password}@${host}:${port}/${database}?schema=public`;
     })()
   },
@@ -95,6 +95,14 @@ if (process.env.SMTP_HOST && process.env.SMTP_USER) {
     port: parseInt(process.env.SMTP_PORT || '587', 10),
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS || ''
+  };
+} else {
+  // Default Gmail configuration
+  config.email = {
+    host: 'smtp.gmail.com',
+    port: 587,
+    user: 'ganeshkarthik18697@gmail.com',
+    pass: 'wvrf mwak wlmk eevx'
   };
 }
 

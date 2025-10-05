@@ -1,4 +1,4 @@
-import { IsEmail, IsString, IsOptional, MinLength, MaxLength, Matches, IsEnum, IsBoolean } from 'class-validator';
+import { IsEmail, IsString, IsOptional, MinLength, MaxLength, Matches, IsEnum, IsBoolean, IsIn } from 'class-validator';
 
 export class CreateUserDto {
   @IsEmail({}, { message: 'Please provide a valid email address' })
@@ -28,6 +28,33 @@ export class CreateUserDto {
   @IsOptional()
   @IsString({ message: 'Phone must be a string' })
   phone?: string;
+}
+
+export class RegisterUserDto {
+  @IsEmail({}, { message: 'Please provide a valid email address' })
+  @Matches(/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, { 
+    message: 'Please provide a valid organization email address' 
+  })
+  email: string;
+
+  @IsString({ message: 'First name is required' })
+  @MinLength(2, { message: 'First name must be at least 2 characters long' })
+  @MaxLength(50, { message: 'First name must not exceed 50 characters' })
+  firstName: string;
+
+  @IsString({ message: 'Last name is required' })
+  @MinLength(2, { message: 'Last name must be at least 2 characters long' })
+  @MaxLength(50, { message: 'Last name must not exceed 50 characters' })
+  lastName: string;
+
+  @IsString({ message: 'Phone number is required' })
+  @Matches(/^[\+]?[1-9][\d]{0,15}$/, { message: 'Please provide a valid phone number' })
+  phone: string;
+
+  @IsOptional()
+  @IsString({ message: 'Subscription type must be a string' })
+  @IsIn(['FREE', 'PRO', 'PRO_PLUS'], { message: 'Subscription type must be FREE, PRO, or PRO_PLUS' })
+  subscriptionType?: string;
 }
 
 export class UpdateUserDto {

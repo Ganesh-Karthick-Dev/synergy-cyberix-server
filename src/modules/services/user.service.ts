@@ -1,11 +1,127 @@
 import { prisma } from '../../config/db';
 import bcrypt from 'bcryptjs';
-import { CreateUserDto, UpdateUserDto, LoginDto, ChangePasswordDto, ForgotPasswordDto, ResetPasswordDto } from '../dtos/user.dto';
+import { CreateUserDto, UpdateUserDto, LoginDto, ChangePasswordDto, ForgotPasswordDto, ResetPasswordDto, RegisterUserDto } from '../dtos/user.dto';
 import { CustomError } from '../../middlewares/error.middleware';
 import { UserPayload } from '../../types';
 import { logger } from '../../utils/logger';
+import { generateRandomPassword, generateUsernameFromEmail } from '../../utils/password.utils';
+import { EmailService } from './email.service';
+import { Service, Inject } from '../../decorators/service.decorator';
 
+@Service()
 export class UserService {
+  private emailService: EmailService;
+
+  constructor() {
+    this.emailService = new EmailService();
+  }
+
+  async registerUser(registerData: RegisterUserDto) {
+    const { email, firstName, lastName, phone, subscriptionType = 'FREE' } = registerData;
+
+    // Check if user already exists
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: email.toLowerCase() }
+        ]
+      }
+    });
+
+    if (existingUser) {
+      throw new CustomError('User with this email already exists', 400);
+    }
+
+    // Generate username and password
+    const username = generateUsernameFromEmail(email);
+    const password = generateRandomPassword(12);
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    // Create user
+    const user = await prisma.user.create({
+      data: {
+        email: email.toLowerCase(),
+        username: username.toLowerCase(),
+        password: hashedPassword,
+        firstName,
+        lastName,
+        phone,
+        role: 'USER',
+        status: 'ACTIVE'
+      },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+        role: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    });
+
+    // Create subscription for the user
+    await this.createUserSubscription(user.id, subscriptionType);
+
+    // Send welcome email
+    try {
+      await this.emailService.sendRegistrationEmail(
+        user.email,
+        user.firstName || 'User',
+        user.username,
+        password
+      );
+    } catch (error) {
+      logger.error('Failed to send registration email:', error);
+      // Don't fail registration if email fails
+    }
+
+    // Log user registration
+    logger.info('User registered successfully', { 
+      userId: user.id, 
+      email: user.email,
+      subscriptionType 
+    });
+
+    return {
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      phone: user.phone,
+      subscriptionType,
+      message: 'Registration successful. Please check your email for login credentials.'
+    };
+  }
+
+  private async createUserSubscription(userId: string, subscriptionType: string) {
+    // Find the service plan
+    const servicePlan = await prisma.servicePlan.findFirst({
+      where: { name: subscriptionType }
+    });
+
+    if (!servicePlan) {
+      throw new CustomError('Service plan not found', 400);
+    }
+
+    // Create user subscription
+    await prisma.userSubscription.create({
+      data: {
+        userId,
+        planId: servicePlan.id,
+        status: 'ACTIVE',
+        startDate: new Date(),
+        autoRenew: true
+      }
+    });
+  }
+
   async createUser(userData: CreateUserDto) {
     const { email, username, password, firstName, lastName, phone } = userData;
 

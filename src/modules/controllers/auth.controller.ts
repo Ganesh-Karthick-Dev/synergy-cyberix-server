@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { AuthService } from '../services/auth.service';
 import { UserService } from '../services/user.service';
-import { CreateUserDto, LoginDto } from '../dtos/user.dto';
+import { CreateUserDto, LoginDto, RegisterUserDto } from '../dtos/user.dto';
 import { ApiResponse } from '../../types';
 import { CustomError } from '../../middlewares/error.middleware';
 
@@ -28,6 +28,24 @@ export class AuthController {
           ...tokens
         },
         message: 'User registered successfully'
+      };
+
+      res.status(201).json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async registerUser(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const registerData: RegisterUserDto = req.body;
+      
+      const result = await this.userService.registerUser(registerData);
+
+      const response: ApiResponse = {
+        success: true,
+        data: result,
+        message: 'User registered successfully. Please check your email for login credentials.'
       };
 
       res.status(201).json(response);

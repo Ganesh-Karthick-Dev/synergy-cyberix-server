@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import { config } from '../../config/env.config';
 import { UserPayload } from '../../types';
 import { CustomError } from '../../middlewares/error.middleware';
+import { Service } from '../../decorators/service.decorator';
 
 export interface TokenPayload {
   userId: string;
@@ -14,6 +15,7 @@ export interface AuthTokens {
   refreshToken: string;
 }
 
+@Service()
 export class AuthService {
   generateAccessToken(payload: TokenPayload): string {
     return jwt.sign(payload, config.jwt.secret, {

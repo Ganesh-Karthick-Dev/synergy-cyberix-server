@@ -83,25 +83,25 @@ async function main() {
   const servicePlans = await Promise.all([
     prisma.servicePlan.create({
       data: {
-        name: 'Basic Security',
-        description: 'Essential security features for small businesses',
-        price: 29.99,
+        name: 'FREE',
+        description: 'Free tier with basic security features',
+        price: 0.00,
         currency: 'USD',
         billingCycle: BillingCycle.MONTHLY,
         features: {
-          vulnerabilityScanning: true,
-          basicReporting: true,
-          emailSupport: true,
-          maxScans: 10
+          basicSecurityScans: true,
+          limitedThreatIntelligence: true,
+          communitySupport: true,
+          maxScans: 5
         },
-        maxUsers: 5,
-        maxStorage: 1024 * 1024 * 1024 // 1GB
+        maxUsers: 1,
+        maxStorage: 100 * 1024 * 1024 // 100MB
       }
     }),
     prisma.servicePlan.create({
       data: {
-        name: 'Professional Security',
-        description: 'Advanced security features for growing businesses',
+        name: 'PRO',
+        description: 'Professional security features for growing businesses',
         price: 99.99,
         currency: 'USD',
         billingCycle: BillingCycle.MONTHLY,
@@ -119,8 +119,8 @@ async function main() {
     }),
     prisma.servicePlan.create({
       data: {
-        name: 'Enterprise Security',
-        description: 'Complete security solution for large organizations',
+        name: 'PRO_PLUS',
+        description: 'Premium security solution for large organizations',
         price: 299.99,
         currency: 'USD',
         billingCycle: BillingCycle.MONTHLY,
