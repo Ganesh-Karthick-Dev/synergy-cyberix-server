@@ -48,7 +48,7 @@ interface Config {
 }
 
 const config: Config = {
-  port: parseInt(process.env.PORT || '3000', 10),
+  port: parseInt(process.env.PORT || '9000', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
   
   database: {
@@ -74,7 +74,7 @@ const config: Config = {
   },
   
   cors: {
-    origin: process.env.CORS_ORIGIN || 'http://localhost:3000'
+    origin: process.env.CORS_ORIGIN || ['http://localhost:3000', 'http://localhost:3001']
   },
   
   rateLimit: {

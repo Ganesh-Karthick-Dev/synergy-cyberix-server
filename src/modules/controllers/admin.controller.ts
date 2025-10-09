@@ -19,12 +19,11 @@ export class AdminController {
     try {
       const { page = 1, limit = 10, search = '', status = '' } = req.query;
       
-      const result = await this.userService.getAllUsers({
-        page: Number(page),
-        limit: Number(limit),
-        search: search as string,
-        status: status as string
-      });
+      const result = await this.userService.getAllUsers(
+        Number(page),
+        Number(limit),
+        search as string
+      );
 
       const response: ApiResponse = {
         success: true,

@@ -12,6 +12,14 @@ import { notFoundHandler } from './middlewares/not-found.middleware';
 import { RouteFactory } from './factories/route.factory';
 import { container } from './container/container';
 import { RegistrationController } from './modules/controllers/registration.controller';
+import { AuthController } from './modules/controllers/auth.controller';
+import { AdminController } from './modules/controllers/admin.controller';
+import { DashboardController } from './modules/controllers/dashboard.controller';
+import { UsersController } from './modules/controllers/users.controller';
+import { PlanController } from './modules/controllers/plan.controller';
+import { SecurityToolsController } from './modules/controllers/security-tools.controller';
+import { NotificationsController } from './modules/controllers/notifications.controller';
+import { AdsController } from './modules/controllers/ads.controller';
 import { UserService } from './modules/services/user.service';
 import { EmailService } from './modules/services/email.service';
 import { AuthService } from './modules/services/auth.service';
@@ -74,6 +82,14 @@ class Server {
     container.autoRegister(AuthService);
     container.autoRegister(UserService);
     container.autoRegister(RegistrationController);
+    container.autoRegister(AuthController);
+    container.autoRegister(AdminController);
+    container.autoRegister(DashboardController);
+    container.autoRegister(UsersController);
+    container.autoRegister(PlanController);
+    container.autoRegister(SecurityToolsController);
+    container.autoRegister(NotificationsController);
+    container.autoRegister(AdsController);
 
     // Health check endpoint
     this.app.get('/health', (req, res) => {
@@ -86,7 +102,17 @@ class Server {
     });
 
     // API routes using decorators
-    const apiRoutes = RouteFactory.createRoutes([RegistrationController]);
+    const apiRoutes = RouteFactory.createRoutes([
+      RegistrationController,
+      AuthController,
+      AdminController,
+      DashboardController,
+      UsersController,
+      PlanController,
+      SecurityToolsController,
+      NotificationsController,
+      AdsController
+    ]);
     this.app.use('/', apiRoutes);
   }
 

@@ -92,6 +92,11 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString({ message: 'Avatar must be a string' })
   avatar?: string;
+
+  @IsOptional()
+  @IsString({ message: 'Status must be a string' })
+  @IsIn(['active', 'inactive', 'suspended'], { message: 'Status must be active, inactive, or suspended' })
+  status?: string;
 }
 
 export class LoginDto {
