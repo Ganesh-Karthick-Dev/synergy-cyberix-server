@@ -227,10 +227,6 @@ export class EmailService {
                 <div class="credentials">
                     <h3>🔐 Your Login Credentials</h3>
                     <div class="credential-item">
-                        <span class="credential-label">Username:</span>
-                        <span class="credential-value">${username}</span>
-                    </div>
-                    <div class="credential-item">
                         <span class="credential-label">Password:</span>
                         <span class="credential-value">${password}</span>
                     </div>

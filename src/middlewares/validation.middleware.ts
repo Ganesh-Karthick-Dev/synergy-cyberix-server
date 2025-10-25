@@ -37,6 +37,5 @@ export const handleValidationErrors = (
 
     return next(new CustomError('Validation failed', 400));
   }
-
   next();
 };

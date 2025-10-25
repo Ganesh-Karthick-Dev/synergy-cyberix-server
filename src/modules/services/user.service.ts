@@ -23,7 +23,7 @@ export class UserService {
     const existingUser = await prisma.user.findFirst({
       where: {
         OR: [
-          { email: email.toLowerCase() }
+          { email: email }
         ]
       }
     });
@@ -32,69 +32,76 @@ export class UserService {
       throw new CustomError('User with this email already exists', 400);
     }
 
-    // Generate username and password
-    const username = generateUsernameFromEmail(email);
+    // Generate password
     const password = generateRandomPassword(12);
 
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Create user
-    const user = await prisma.user.create({
-      data: {
-        email: email.toLowerCase(),
-        username: username.toLowerCase(),
-        password: hashedPassword,
-        firstName,
-        lastName,
-        phone,
-        role: 'USER',
-        status: 'ACTIVE'
-      },
-      select: {
-        id: true,
-        email: true,
-        username: true,
-        firstName: true,
-        lastName: true,
-        phone: true,
-        role: true,
-        status: true,
-        createdAt: true,
-        updatedAt: true
+    // Use database transaction to ensure atomicity
+    const result = await prisma.$transaction(async (tx) => {
+      try {
+        // Create user
+        const user = await tx.user.create({
+          data: {
+            email: email,
+            username: null, // No username concept
+            password: hashedPassword,
+            firstName,
+            lastName,
+            phone,
+            role: 'USER',
+            status: 'ACTIVE'
+          },
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            phone: true,
+            role: true,
+            status: true,
+            createdAt: true,
+            updatedAt: true
+          }
+        });
+
+        // Create subscription for the user within the same transaction
+        await this.createUserSubscriptionInTransaction(tx, user.id, subscriptionType);
+
+        return user;
+      } catch (error) {
+        logger.error('Transaction failed during user registration:', error);
+        throw error; // This will automatically rollback the transaction
       }
     });
 
-    // Create subscription for the user
-    await this.createUserSubscription(user.id, subscriptionType);
-
-    // Send welcome email
+    // Send welcome email (outside transaction - if this fails, user is still created)
     try {
       await this.emailService.sendRegistrationEmail(
-        user.email,
-        user.firstName || 'User',
-        user.username,
+        result.email,
+        result.firstName || 'User',
+        result.email, // Use email instead of username
         password
       );
     } catch (error) {
       logger.error('Failed to send registration email:', error);
-      // Don't fail registration if email fails
+      // Don't fail registration if email fails - user is already created
     }
 
     // Log user registration
     logger.info('User registered successfully', { 
-      userId: user.id, 
-      email: user.email,
+      userId: result.id, 
+      email: result.email,
       subscriptionType 
     });
 
     return {
-      id: user.id,
-      email: user.email,
-      username: user.username,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      phone: user.phone,
+      id: result.id,
+      email: result.email,
+      firstName: result.firstName,
+      lastName: result.lastName,
+      phone: result.phone,
       subscriptionType,
       message: 'Registration successful. Please check your email for login credentials.'
     };
@@ -122,26 +129,40 @@ export class UserService {
     });
   }
 
+  private async createUserSubscriptionInTransaction(tx: any, userId: string, subscriptionType: string) {
+    // Find the service plan within the transaction
+    const servicePlan = await tx.servicePlan.findFirst({
+      where: { name: subscriptionType }
+    });
+
+    if (!servicePlan) {
+      throw new CustomError('Service plan not found', 400);
+    }
+
+    // Create user subscription within the transaction
+    await tx.userSubscription.create({
+      data: {
+        userId,
+        planId: servicePlan.id,
+        status: 'ACTIVE',
+        startDate: new Date(),
+        autoRenew: true
+      }
+    });
+  }
+
   async createUser(userData: CreateUserDto) {
-    const { email, username, password, firstName, lastName, phone } = userData;
+    const { email, password, firstName, lastName, phone } = userData;
 
     // Check if user already exists
     const existingUser = await prisma.user.findFirst({
       where: {
-        OR: [
-          { email: email.toLowerCase() },
-          { username: username.toLowerCase() }
-        ]
+        email: email
       }
     });
 
     if (existingUser) {
-      if (existingUser.email === email.toLowerCase()) {
-        throw new CustomError('Email already exists', 400);
-      }
-      if (existingUser.username === username.toLowerCase()) {
-        throw new CustomError('Username already exists', 400);
-      }
+      throw new CustomError('User with this email already exists', 400);
     }
 
     // Hash password
@@ -150,8 +171,8 @@ export class UserService {
     // Create user
     const user = await prisma.user.create({
       data: {
-        email: email.toLowerCase(),
-        username: username.toLowerCase(),
+        email: email,
+        username: null, // No username concept
         password: hashedPassword,
         firstName,
         lastName,
@@ -162,7 +183,6 @@ export class UserService {
       select: {
         id: true,
         email: true,
-        username: true,
         firstName: true,
         lastName: true,
         phone: true,
@@ -184,7 +204,6 @@ export class UserService {
     return {
       id: user.id,
       email: user.email,
-      username: user.username,
       role: user.role,
       isActive: user.status === 'ACTIVE'
     };
@@ -196,7 +215,6 @@ export class UserService {
       select: {
         id: true,
         email: true,
-        username: true,
         role: true,
         status: true,
         createdAt: true,
@@ -213,45 +231,34 @@ export class UserService {
 
   async getUserByEmail(email: string) {
     const user = await prisma.user.findUnique({
-      where: { email: email.toLowerCase() }
+      where: { email: email }
     });
 
     return user;
   }
 
   async updateUser(id: string, userData: UpdateUserDto) {
-    const { email, username, password } = userData;
+    const { email, password } = userData;
 
-    // Check if email or username already exists (excluding current user)
-    if (email || username) {
+    // Check if email already exists (excluding current user)
+    if (email) {
       const existingUser = await prisma.user.findFirst({
         where: {
           AND: [
             { id: { not: id } },
-            {
-              OR: [
-                ...(email ? [{ email: email.toLowerCase() }] : []),
-                ...(username ? [{ username: username.toLowerCase() }] : [])
-              ]
-            }
+            { email: email }
           ]
         }
       });
 
       if (existingUser) {
-        if (existingUser.email === email?.toLowerCase()) {
-          throw new CustomError('Email already exists', 400);
-        }
-        if (existingUser.username === username?.toLowerCase()) {
-          throw new CustomError('Username already exists', 400);
-        }
+        throw new CustomError('User with this email already exists', 400);
       }
     }
 
     // Prepare update data
     const updateData: any = {};
-    if (email) updateData.email = email.toLowerCase();
-    if (username) updateData.username = username.toLowerCase();
+    if (email) updateData.email = email;
     if (password) updateData.password = await bcrypt.hash(password, 12);
 
     const user = await prisma.user.update({
@@ -260,7 +267,6 @@ export class UserService {
       select: {
         id: true,
         email: true,
-        username: true,
         role: true,
         status: true,
         createdAt: true,
@@ -283,10 +289,7 @@ export class UserService {
     const skip = (page - 1) * limit;
 
     const where = search ? {
-      OR: [
-        { email: { contains: search, mode: 'insensitive' as const } },
-        { username: { contains: search, mode: 'insensitive' as const } }
-      ]
+      email: { contains: search, mode: 'insensitive' as const }
     } : {};
 
     const [users, total] = await Promise.all([
@@ -297,7 +300,6 @@ export class UserService {
         select: {
           id: true,
           email: true,
-          username: true,
           role: true,
           status: true,
           createdAt: true,
@@ -323,11 +325,9 @@ export class UserService {
     const { email, password, deviceInfo } = credentials;
 
     const user = await this.getUserByEmail(email);
-    
-    // Log login attempt
-    await this.logLoginAttempt(email, false, ipAddress, userAgent, 'User not found');
 
     if (!user) {
+      await this.logLoginAttempt(email, false, ipAddress, userAgent, 'User not found');
       throw new CustomError('Invalid credentials', 401);
     }
 
@@ -362,27 +362,14 @@ export class UserService {
     return {
       id: user.id,
       email: user.email,
-      username: user.username,
       role: user.role,
       isActive: user.status === 'ACTIVE'
     };
   }
 
   async logLoginAttempt(email: string, success: boolean, ipAddress?: string, userAgent?: string, reason?: string) {
-    try {
-      await prisma.loginLog.create({
-        data: {
-          userId: success ? (await this.getUserByEmail(email))?.id || '' : '',
-          email,
-          success,
-          ipAddress,
-          userAgent,
-          reason
-        }
-      });
-    } catch (error) {
-      logger.error('Failed to log login attempt', { error, email, success });
-    }
+    // Simplified logging - just log to console for now
+    logger.info('Login attempt', { email, success, ipAddress, userAgent, reason });
   }
 
   async createSession(userId: string, token: string, expiresAt: Date, deviceInfo?: string, ipAddress?: string, userAgent?: string) {

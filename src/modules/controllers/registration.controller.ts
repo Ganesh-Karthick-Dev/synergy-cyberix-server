@@ -20,6 +20,8 @@ export class RegistrationController {
   async registerUser(req: Request, res: Response): Promise<void> {
     try {
       const registerData: RegisterUserDto = req.body;
+
+      console.log(`registerData: ${JSON.stringify(registerData)}`);
       
       const result = await this.userService.registerUser(registerData);
 
@@ -31,11 +33,30 @@ export class RegistrationController {
 
       res.status(201).json(response);
     } catch (error) {
-      res.status(400).json({
+      // Handle different types of errors
+      let statusCode = 400;
+      let message = 'Registration failed';
+
+      if (error instanceof Error) {
+        if (error.message.includes('already exists')) {
+          statusCode = 409; // Conflict
+          message = error.message;
+        } else if (error.message.includes('Service plan not found')) {
+          statusCode = 400;
+          message = error.message;
+        } else if (error.message.includes('Registration failed')) {
+          statusCode = 500;
+          message = 'Database transaction failed. Please try again.';
+        } else {
+          message = error.message;
+        }
+      }
+
+      res.status(statusCode).json({
         success: false,
         error: {
-          message: error instanceof Error ? error.message : 'Registration failed',
-          statusCode: 400
+          message,
+          statusCode
         }
       });
     }

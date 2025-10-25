@@ -30,7 +30,6 @@ export interface SearchQuery extends PaginationQuery {
 export interface UserPayload {
   id: string;
   email: string;
-  username: string;
   role: string;
   isActive: boolean;
 }
@@ -42,13 +41,11 @@ export interface LoginCredentials {
 
 export interface RegisterData {
   email: string;
-  username: string;
   password: string;
 }
 
 export interface UpdateUserData {
   email?: string;
-  username?: string;
   password?: string;
 }
 
