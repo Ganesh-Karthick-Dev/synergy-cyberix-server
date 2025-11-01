@@ -1,22 +1,12 @@
 import dotenv from 'dotenv';
 import path from 'path';
 
-// Load environment variables based on NODE_ENV
-const nodeEnv = process.env.NODE_ENV || 'development';
-const envFile = nodeEnv === 'production' ? '.env.production' : '.env.development';
-
-// Try to load specific env file, fallback to .env
-try {
-  dotenv.config({ path: path.resolve(process.cwd(), envFile) });
-} catch (error) {
-  // Fallback to default .env file
-  dotenv.config();
-}
+// Load environment variables - production mode only
+dotenv.config(); // Load .env file
 
 interface Config {
   port: number;
   nodeEnv: string;
-  mode: 'development' | 'production';
   security: {
     singleDeviceLogin: boolean;
     loginBlocking: boolean;
@@ -52,17 +42,22 @@ interface Config {
     maxFileSize: number;
     path: string;
   };
+  google?: {
+    clientId: string;
+    clientSecret: string;
+    callbackURL: string;
+  };
+  frontendUrl: string;
 }
 
 const config: Config = {
   port: parseInt(process.env.PORT || '9000', 10),
-  nodeEnv: process.env.NODE_ENV || 'development',
-  mode: (process.env.APP_MODE || process.env.NODE_ENV || 'development') as 'development' | 'production',
+  nodeEnv: process.env.NODE_ENV || 'production',
   security: {
-    singleDeviceLogin: process.env.SINGLE_DEVICE_LOGIN === 'true' || (process.env.APP_MODE || process.env.NODE_ENV || 'development') === 'production',
-    loginBlocking: process.env.LOGIN_BLOCKING === 'true' || (process.env.APP_MODE || process.env.NODE_ENV || 'development') === 'production',
-    emailNotifications: process.env.EMAIL_NOTIFICATIONS === 'true' || (process.env.APP_MODE || process.env.NODE_ENV || 'development') === 'production',
-    adminAccessControl: process.env.ADMIN_ACCESS_CONTROL === 'true' || (process.env.APP_MODE || process.env.NODE_ENV || 'development') === 'production'
+    singleDeviceLogin: process.env.SINGLE_DEVICE_LOGIN !== 'false',
+    loginBlocking: process.env.LOGIN_BLOCKING !== 'false',
+    emailNotifications: process.env.EMAIL_NOTIFICATIONS !== 'false',
+    adminAccessControl: process.env.ADMIN_ACCESS_CONTROL !== 'false'
   },
   
   database: {
@@ -99,7 +94,8 @@ const config: Config = {
   upload: {
     maxFileSize: parseInt(process.env.MAX_FILE_SIZE || '10485760', 10), // 10MB
     path: process.env.UPLOAD_PATH || './uploads'
-  }
+  },
+  frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000'
 };
 
 // Add email configuration if provided
@@ -118,6 +114,33 @@ if (process.env.SMTP_HOST && process.env.SMTP_USER) {
     user: 'ganeshkarthik18697@gmail.com',
     pass: 'wvrf mwak wlmk eevx'
   };
+}
+
+// Add Google OAuth configuration if provided
+const googleClientId = process.env.GOOGLE_CLIENT_ID?.trim();
+const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
+
+if (googleClientId && googleClientSecret && googleClientId.length > 0 && googleClientSecret.length > 0) {
+  // Google callback URL: Can point to frontend Next.js API route (which proxies to backend)
+  // OR directly to backend. Must match Google Console's "Authorized redirect URIs"
+  // Default: Use GOOGLE_CALLBACK_URL from .env, or construct backend URL
+  const backendUrl = process.env.BACKEND_URL || `http://localhost:${config.port}`;
+  const callbackUrl = process.env.GOOGLE_CALLBACK_URL?.trim() || `${backendUrl}/api/auth/google/callback`;
+  
+  config.google = {
+    clientId: googleClientId,
+    clientSecret: googleClientSecret,
+    callbackURL: callbackUrl
+  };
+  
+  // Log configuration status (only client ID prefix for security)
+  console.log('✅ Google OAuth configured');
+  console.log('   Callback URL:', callbackUrl);
+} else {
+  // Log missing configuration
+  console.warn('⚠️  Google OAuth not configured.');
+  console.warn('   GOOGLE_CLIENT_ID:', googleClientId ? `${googleClientId.substring(0, 20)}...` : 'not set');
+  console.warn('   GOOGLE_CLIENT_SECRET:', googleClientSecret ? 'set' : 'not set');
 }
 
 export { config };

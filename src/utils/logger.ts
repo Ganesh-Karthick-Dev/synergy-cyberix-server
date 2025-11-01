@@ -8,17 +8,9 @@ export enum LogLevel {
 }
 
 class Logger {
-  private isDevelopment = config.nodeEnv === 'development';
-
   private formatMessage(level: LogLevel, message: string, meta?: any): string {
     const timestamp = new Date().toISOString();
-    const formattedMessage = `[${timestamp}] [${level.toUpperCase()}] ${message}`;
-    
-    if (meta && this.isDevelopment) {
-      return `${formattedMessage}\n${JSON.stringify(meta, null, 2)}`;
-    }
-    
-    return formattedMessage;
+    return `[${timestamp}] [${level.toUpperCase()}] ${message}`;
   }
 
   error(message: string, meta?: any): void {
@@ -34,9 +26,7 @@ class Logger {
   }
 
   debug(message: string, meta?: any): void {
-    if (this.isDevelopment) {
-      console.debug(this.formatMessage(LogLevel.DEBUG, message, meta));
-    }
+    console.debug(this.formatMessage(LogLevel.DEBUG, message, meta));
   }
 }
 

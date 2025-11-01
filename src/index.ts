@@ -6,7 +6,11 @@ import morgan from 'morgan';
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
+import session from 'express-session';
+import passport from 'passport';
 import { config } from './config/env.config';
+// Import passport config to register strategies
+import './config/passport';
 import { errorHandler } from './middlewares/error.middleware';
 import { notFoundHandler } from './middlewares/not-found.middleware';
 import { RouteFactory } from './factories/route.factory';
@@ -66,15 +70,27 @@ class Server {
     this.app.use(express.urlencoded({ extended: true, limit: '10mb' }));
     this.app.use(cookieParser());
 
+    // Session configuration (required for Passport OAuth)
+    this.app.use(session({
+      secret: config.session.secret,
+      resave: false,
+      saveUninitialized: false,
+      cookie: {
+        secure: process.env.NODE_ENV === 'production',
+        httpOnly: true,
+        maxAge: 24 * 60 * 60 * 1000 // 24 hours
+      }
+    }));
+
+    // Initialize Passport
+    this.app.use(passport.initialize());
+    this.app.use(passport.session());
+
     // Compression middleware
     this.app.use(compression());
 
     // Logging middleware
-    if (config.nodeEnv === 'development') {
-      this.app.use(morgan('dev'));
-    } else {
-      this.app.use(morgan('combined'));
-    }
+    this.app.use(morgan('combined'));
   }
 
   private initializeRoutes(): void {

@@ -6,5 +6,6 @@ export * from './auth.service';
 
 // Plan services
 export * from './plan.service';
+export * from './ads.service';
 
 // Post services removed - not needed for cybersecurity server

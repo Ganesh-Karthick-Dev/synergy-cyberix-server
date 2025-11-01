@@ -7,14 +7,12 @@ declare global {
 
 // Create a single instance of PrismaClient
 const prisma = globalThis.__prisma || new PrismaClient({
-  log: config.nodeEnv === 'development' ? ['query', 'error', 'warn'] : ['error'],
+  log: ['error'],
   errorFormat: 'pretty',
 });
 
-// In development, save the instance to global to prevent multiple instances
-if (config.nodeEnv === 'development') {
-  globalThis.__prisma = prisma;
-}
+// Save the instance to global to prevent multiple instances
+globalThis.__prisma = prisma;
 
 // Graceful shutdown
 process.on('beforeExit', async () => {

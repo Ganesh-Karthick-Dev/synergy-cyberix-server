@@ -16,7 +16,8 @@ model User {
   id                String   @id @default(cuid())
   email             String   @unique
   username          String?  @unique
-  password          String
+  password          String?  // Made optional for Google OAuth users
+  googleId          String?  @unique
   firstName         String?
   lastName          String?
   avatar            String?
@@ -229,6 +230,24 @@ model Ad {
   @@map("ads")
 }
 
+// PostAd model for marquee/header ads (simpler than AdCampaign)
+model PostAd {
+  id          String   @id @default(cuid())
+  title       String
+  content     String
+  link        String?
+  isActive    Boolean  @default(false)
+  priority    AdPriority @default(MEDIUM)
+  startDate   DateTime?
+  endDate     DateTime?
+  impressions Int      @default(0)
+  clicks      Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("post_ads")
+}
+
 // ==================== PUSH NOTIFICATIONS ====================
 
 model Notification {
@@ -359,6 +378,12 @@ enum AdStatus {
   PAUSED
   COMPLETED
   REJECTED
+}
+
+enum AdPriority {
+  HIGH
+  MEDIUM
+  LOW
 }
 
 enum NotificationType {

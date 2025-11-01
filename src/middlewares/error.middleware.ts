@@ -50,21 +50,18 @@ export const errorHandler = (
     message = 'Token expired';
   }
 
-  // Log error in development
-  if (config.nodeEnv === 'development') {
-    console.error('Error:', {
-      message: error.message,
-      stack: error.stack,
-      statusCode,
-      url: req.url,
-      method: req.method,
-      ip: req.ip,
-      userAgent: req.get('User-Agent')
-    });
-  }
+  // Log error
+  console.error('Error:', {
+    message: error.message,
+    statusCode,
+    url: req.url,
+    method: req.method,
+    ip: req.ip,
+    userAgent: req.get('User-Agent')
+  });
 
-  // Don't leak error details in production
-  if (config.nodeEnv === 'production' && !error.isOperational) {
+  // Don't leak error details if not operational
+  if (!error.isOperational) {
     message = 'Something went wrong!';
   }
 
@@ -72,7 +69,7 @@ export const errorHandler = (
     success: false,
     error: {
       message,
-      ...(config.nodeEnv === 'development' && { stack: error.stack })
+      statusCode
     }
   });
 };

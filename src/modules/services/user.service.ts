@@ -461,6 +461,12 @@ export class UserService {
       throw new CustomError('Account is not active', 401);
     }
 
+    // Check if user has a password (Google OAuth users may not have one)
+    if (!user.password) {
+      await this.logLoginAttempt(email, false, ipAddress, userAgent, 'This account uses Google login');
+      throw new CustomError('This account uses Google login. Please use Google sign-in.', 401);
+    }
+
     const isPasswordValid = await bcrypt.compare(password, user.password);
     
     if (!isPasswordValid) {
@@ -557,6 +563,11 @@ export class UserService {
 
     if (!user) {
       throw new CustomError('User not found', 404);
+    }
+
+    // Check if user has a password (Google OAuth users may not have one)
+    if (!user.password) {
+      throw new CustomError('This account uses Google login. Password cannot be changed.', 400);
     }
 
     const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password);

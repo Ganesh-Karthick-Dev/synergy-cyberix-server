@@ -108,3 +108,4 @@ uploads/
 
 # Prisma
 prisma/migrations/
+.env.development

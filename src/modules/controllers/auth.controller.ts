@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import { Controller, Post, Get, Delete } from '../../decorators/controller.decorator';
 import { Validate, RegisterUserValidation } from '../../decorators/validation.decorator';
 import { body } from 'express-validator';
@@ -11,6 +11,7 @@ import { authenticate } from '../../middlewares/auth.middleware';
 import { prisma } from '../../config/db';
 import { Use } from '../../decorators/middleware.decorator';
 import { config } from '../../config/env.config';
+import passport from 'passport';
 
 @Service()
 @Controller('/api/auth')
@@ -107,7 +108,7 @@ export class AuthController {
             });
           }
         } else {
-          // Development mode - simple error response
+          // Simple error response
           res.status(401).json({
             success: false,
             error: { 
@@ -1061,5 +1062,221 @@ export class AuthController {
         }
       });
     }
+  }
+
+  // Google OAuth Login - Initiate
+  @Get('/google')
+  async googleLogin(req: Request, res: Response, next: NextFunction): Promise<void> {
+    console.log('🟢 [Backend] Google OAuth login initiated');
+    console.log('🟢 [Backend] Request URL:', req.url);
+    console.log('🟢 [Backend] Request query:', req.query);
+    console.log('🟢 [Backend] Session ID:', req.sessionID);
+    
+    if (!config.google) {
+      console.error('🟢 [Backend] Google OAuth not configured');
+      res.status(503).json({
+        success: false,
+        error: {
+          message: 'Google OAuth is not configured. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in your .env file.',
+          statusCode: 503,
+          hint: 'Add these to your .env file: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_CALLBACK_URL, FRONTEND_URL'
+        }
+      });
+      return;
+    }
+
+    console.log('🟢 [Backend] Google OAuth config:', {
+      clientId: `${config.google.clientId.substring(0, 20)}...`,
+      callbackURL: config.google.callbackURL,
+    });
+
+    // Store redirect URL in session if provided
+    if (req.query.redirect) {
+      (req.session as any).redirectUrl = req.query.redirect as string;
+      console.log('🟢 [Backend] Stored redirect URL in session:', req.query.redirect);
+    }
+
+    console.log('🟢 [Backend] Initiating Passport Google authentication...');
+    // Use passport.authenticate as Express middleware
+    return passport.authenticate('google', {
+      scope: ['profile', 'email']
+    })(req, res, next);
+  }
+
+  // Google OAuth Callback
+  @Get('/google/callback')
+  async googleCallback(req: Request, res: Response, next: NextFunction): Promise<void> {
+    console.log('🟡 [Backend Callback] Google OAuth callback received');
+    console.log('🟡 [Backend Callback] Request URL:', req.url);
+    console.log('🟡 [Backend Callback] Request query:', req.query);
+    console.log('🟡 [Backend Callback] Session ID:', req.sessionID);
+    console.log('🟡 [Backend Callback] Request headers:', {
+      cookie: req.headers.cookie ? 'Present' : 'Missing',
+      userAgent: req.headers['user-agent'],
+      referer: req.headers.referer,
+    });
+
+    if (!config.google) {
+      console.error('🟡 [Backend Callback] Google OAuth not configured');
+      res.status(503).json({
+        success: false,
+        error: {
+          message: 'Google OAuth is not configured',
+          statusCode: 503
+        }
+      });
+      return;
+    }
+
+    console.log('🟡 [Backend Callback] Authenticating with Passport Google strategy...');
+    passport.authenticate('google', { session: false }, async (err: any, user: any) => {
+      console.log('🟡 [Backend Callback] Passport authenticate callback triggered');
+      console.log('🟡 [Backend Callback] Error:', err ? {
+        message: err.message,
+        name: err.name,
+      } : 'None');
+      console.log('🟡 [Backend Callback] User:', user ? {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+      } : 'None');
+
+      if (err || !user) {
+        // Redirect to frontend with error
+        const errorMessage = err?.message || 'Google authentication failed';
+        console.error('🟡 [Backend Callback] Authentication failed:', errorMessage);
+        console.log('🟡 [Backend Callback] Redirecting to:', `${config.frontendUrl}/signin?error=${encodeURIComponent(errorMessage)}`);
+        return res.redirect(`${config.frontendUrl}/signin?error=${encodeURIComponent(errorMessage)}`);
+      }
+
+      try {
+        console.log('🟡 [Backend Callback] Processing successful authentication for user:', user.email);
+        console.log('🟡 [Backend Callback] Single device login enabled:', config.security.singleDeviceLogin);
+        
+        // Check if user already has an active session (Single Device Login Enforcement)
+        if (config.security.singleDeviceLogin) {
+          console.log('🟡 [Backend Callback] Checking for existing sessions...');
+          const existingSessions = await this.authService.getUserSessions(user.id);
+          console.log('🟡 [Backend Callback] Existing sessions count:', existingSessions.length);
+          
+          if (existingSessions.length > 0) {
+            const existingSession = existingSessions[0];
+            console.log('🟡 [Backend Callback] User already has active session:', {
+              deviceInfo: existingSession.deviceInfo,
+              ipAddress: existingSession.ipAddress,
+            });
+            
+            await this.authService.logLoginAttempt(
+              user.id,
+              user.email,
+              false,
+              req.ip || '',
+              req.get('User-Agent') || '',
+              `User already logged in on another device. Existing session: ${existingSession.deviceInfo || 'Unknown Device'} (IP: ${existingSession.ipAddress || 'Unknown'})`
+            );
+            
+            const errorUrl = `${config.frontendUrl}/signin?error=${encodeURIComponent('This account is already logged in on another device. Please logout from the other device first.')}`;
+            console.log('🟡 [Backend Callback] Redirecting to:', errorUrl);
+            return res.redirect(errorUrl);
+          }
+        }
+
+        // Generate tokens
+        const deviceInfo = {
+          userAgent: req.get('User-Agent') || '',
+          platform: 'web',
+          language: req.get('Accept-Language') || 'en',
+          timestamp: new Date().toISOString()
+        };
+        console.log('🟡 [Backend Callback] Device info:', deviceInfo);
+
+        // Get user role (handle both string and object formats)
+        const userRole = typeof user.role === 'string' ? user.role : (user as any).role || 'USER';
+        const userStatus = (user as any).status || ((user as any).isActive ? 'ACTIVE' : 'INACTIVE');
+        console.log('🟡 [Backend Callback] User role:', userRole, 'Status:', userStatus);
+        
+        console.log('🟡 [Backend Callback] Generating tokens...');
+        const tokens = this.authService.generateTokens({
+          id: user.id,
+          email: user.email,
+          role: userRole,
+          isActive: userStatus === 'ACTIVE'
+        });
+        console.log('🟡 [Backend Callback] Tokens generated:', {
+          accessToken: tokens.accessToken ? 'Present' : 'Missing',
+          refreshToken: tokens.refreshToken ? 'Present' : 'Missing',
+        });
+
+        // Create new session
+        console.log('🟡 [Backend Callback] Creating session...');
+        await this.authService.createSession(
+          user.id,
+          tokens.accessToken,
+          JSON.stringify(deviceInfo),
+          req.ip || '',
+          req.get('User-Agent') || ''
+        );
+        console.log('🟡 [Backend Callback] Session created successfully');
+
+        // Update last login
+        console.log('🟡 [Backend Callback] Updating last login timestamp...');
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { lastLoginAt: new Date() }
+        });
+
+        // Log successful login
+        console.log('🟡 [Backend Callback] Logging successful login attempt...');
+        await this.authService.logLoginAttempt(
+          user.id,
+          user.email,
+          true,
+          req.ip || '',
+          req.get('User-Agent') || ''
+        );
+
+        // Set cookies
+        console.log('🟡 [Backend Callback] Setting cookies...');
+        res.cookie('accessToken', tokens.accessToken, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+        });
+        console.log('🟡 [Backend Callback] accessToken cookie set');
+
+        if (tokens.refreshToken) {
+          res.cookie('refreshToken', tokens.refreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+          });
+          console.log('🟡 [Backend Callback] refreshToken cookie set');
+        }
+
+        // Get redirect URL from session or default to dashboard
+        const redirectUrl = (req.session as any)?.redirectUrl || '/dashboard';
+        delete (req.session as any)?.redirectUrl;
+        console.log('🟡 [Backend Callback] Redirect URL from session:', redirectUrl);
+        console.log('🟡 [Backend Callback] Frontend URL:', config.frontendUrl);
+
+        const finalRedirectUrl = `${config.frontendUrl}${redirectUrl}`;
+        console.log('🟡 [Backend Callback] Final redirect URL:', finalRedirectUrl);
+        console.log('🟡 [Backend Callback] Redirecting to frontend...');
+
+        // Redirect to frontend with success
+        return res.redirect(finalRedirectUrl);
+      } catch (error: any) {
+        console.error('🟡 [Backend Callback] Error in callback handler:', {
+          message: error?.message,
+          stack: error?.stack,
+          name: error?.name,
+        });
+        const errorUrl = `${config.frontendUrl}/signin?error=${encodeURIComponent(error?.message || 'Login failed. Please try again.')}`;
+        console.error('🟡 [Backend Callback] Redirecting to error page:', errorUrl);
+        return res.redirect(errorUrl);
+      }
+    })(req, res);
   }
 }

@@ -4,93 +4,41 @@ import { Validate } from '../../decorators/validation.decorator';
 import { Service } from '../../decorators/service.decorator';
 import { ApiResponse } from '../../types';
 import { body } from 'express-validator';
+import { AdsService } from '../services';
 
 @Service()
 @Controller('/api/ads')
 export class AdsController {
+  private adsService: AdsService;
+
+  constructor() {
+    this.adsService = new AdsService();
+  }
   @Get('/')
   async getAllAds(req: Request, res: Response): Promise<void> {
     try {
       const { search, status, priority } = req.query;
-      
-      // Mock data based on post-ads/page.tsx structure
-      const ads = [
-        {
-          id: '1',
-          title: '50% OFF - Professional Security Scanner',
-          content: 'Limited time offer! Get 50% discount on our Professional Security Scanner plan. Secure your website today!',
-          link: 'https://cyberix.com/purchase?discount=50off',
-          isActive: true,
-          priority: 'high',
-          startDate: '2024-01-15',
-          endDate: '2024-02-15',
-          createdAt: '2024-01-10',
-          updatedAt: '2024-01-12',
-          clicks: 1247,
-          impressions: 15680
-        },
-        {
-          id: '2',
-          title: '30% OFF - Enterprise Security Suite',
-          content: 'Special discount! Save 30% on our Enterprise Security Suite. Perfect for large organizations!',
-          link: 'https://cyberix.com/purchase?discount=30off',
-          isActive: false,
-          priority: 'medium',
-          startDate: '2024-01-20',
-          endDate: '2024-03-20',
-          createdAt: '2024-01-18',
-          updatedAt: '2024-01-19',
-          clicks: 892,
-          impressions: 12340
-        },
-        {
-          id: '3',
-          title: 'Buy 2 Get 1 FREE - Basic Plans',
-          content: 'Amazing deal! Purchase 2 Basic Security Scanner licenses and get 1 absolutely free!',
-          link: 'https://cyberix.com/purchase?deal=buy2get1',
-          isActive: false,
-          priority: 'low',
-          startDate: '2024-01-25',
-          endDate: '2024-02-25',
-          createdAt: '2024-01-22',
-          updatedAt: '2024-01-23',
-          clicks: 456,
-          impressions: 7890
-        }
-      ];
 
-      // Apply filters
-      let filteredAds = ads;
-      
-      if (search) {
-        const searchTerm = (search as string).toLowerCase();
-        filteredAds = filteredAds.filter(ad => 
-          ad.title.toLowerCase().includes(searchTerm) ||
-          ad.content.toLowerCase().includes(searchTerm)
-        );
-      }
-      
-      if (status) {
-        filteredAds = filteredAds.filter(ad => ad.isActive === (status === 'active'));
-      }
-      
-      if (priority) {
-        filteredAds = filteredAds.filter(ad => ad.priority === priority);
-      }
+      const ads = await this.adsService.getAllAds({
+        search: search as string | undefined,
+        status: status as string | undefined,
+        priority: priority as string | undefined,
+      });
 
       const response: ApiResponse = {
         success: true,
-        data: filteredAds,
+        data: ads,
         message: 'Ads retrieved successfully'
       };
 
       res.json(response);
-    } catch (error) {
-      res.status(500).json({
+    } catch (error: any) {
+      const statusCode = error.statusCode || 500;
+      res.status(statusCode).json({
         success: false,
         error: {
-          message: error instanceof Error ? error.message : 'Failed to retrieve ads',
-          statusCode: 500
+          message: error.message || 'Failed to retrieve ads',
+          statusCode
         }
       });
     }
@@ -99,12 +47,7 @@ export class AdsController {
   @Get('/stats')
   async getAdStats(req: Request, res: Response): Promise<void> {
     try {
-      const stats = {
-        totalAds: 3,
-        activeAds: 1,
-        totalClicks: 2595,
-        totalImpressions: 35910
-      };
+      const stats = await this.adsService.getAdStats();
 
       const response: ApiResponse = {
         success: true,
@@ -113,12 +56,13 @@ export class AdsController {
       };
 
       res.json(response);
-    } catch (error) {
-      res.status(500).json({
+    } catch (error: any) {
+      const statusCode = error.statusCode || 500;
+      res.status(statusCode).json({
         success: false,
         error: {
-          message: error instanceof Error ? error.message : 'Failed to retrieve ad stats',
-          statusCode: 500
+          message: error.message || 'Failed to retrieve ad stats',
+          statusCode
         }
       });
     }
@@ -134,22 +78,17 @@ export class AdsController {
   ])
   async createAd(req: Request, res: Response): Promise<void> {
     try {
-      const { title, content, link, priority, startDate, endDate } = req.body;
+      const { title, content, link, priority, startDate, endDate, isActive } = req.body;
 
-      const newAd = {
-        id: Date.now().toString(),
+      const newAd = await this.adsService.createAd({
         title,
         content,
-        link: link || null,
-        isActive: true,
+        link,
         priority,
         startDate,
         endDate,
-        createdAt: new Date().toISOString().split('T')[0],
-        updatedAt: new Date().toISOString().split('T')[0],
-        clicks: 0,
-        impressions: 0
-      };
+        isActive,
+      });
 
       const response: ApiResponse = {
         success: true,
@@ -158,12 +97,74 @@ export class AdsController {
       };
 
       res.status(201).json(response);
-    } catch (error) {
-      res.status(500).json({
+    } catch (error: any) {
+      const statusCode = error.statusCode || 500;
+      res.status(statusCode).json({
         success: false,
         error: {
-          message: error instanceof Error ? error.message : 'Failed to create ad',
-          statusCode: 500
+          message: error.message || 'Failed to create ad',
+          statusCode
+        }
+      });
+    }
+  }
+
+  @Put('/deactivate-all')
+  async deactivateAllAds(req: Request, res: Response): Promise<void> {
+    try {
+      const result = await this.adsService.deactivateAllAds();
+
+      const response: ApiResponse = {
+        success: true,
+        data: result,
+        message: result.message,
+      };
+
+      res.json(response);
+    } catch (error: any) {
+      const statusCode = error.statusCode || 500;
+      res.status(statusCode).json({
+        success: false,
+        error: {
+          message: error.message || 'Failed to deactivate all ads',
+          statusCode
+        }
+      });
+    }
+  }
+
+  @Put('/:id/toggle')
+  async toggleAd(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+
+      if (!id) {
+        res.status(400).json({
+          success: false,
+          error: {
+            message: 'Ad ID is required',
+            statusCode: 400
+          }
+        });
+        return;
+      }
+
+      const updatedAd = await this.adsService.toggleAdStatus(id);
+
+      const response: ApiResponse = {
+        success: true,
+        data: updatedAd,
+        message: `Ad ${updatedAd.isActive ? 'activated' : 'deactivated'} successfully`
+      };
+
+      res.json(response);
+    } catch (error: any) {
+      const statusCode = error.statusCode || 500;
+      res.status(statusCode).json({
+        success: false,
+        error: {
+          message: error.message || 'Failed to toggle ad',
+          statusCode
         }
       });
     }
@@ -175,12 +176,18 @@ export class AdsController {
       const { id } = req.params;
       const updateData = req.body;
 
-      // Mock update - in real app, this would update database
-      const updatedAd = {
-        id,
-        ...updateData,
-        updatedAt: new Date().toISOString().split('T')[0]
-      };
+      if (!id) {
+        res.status(400).json({
+          success: false,
+          error: {
+            message: 'Ad ID is required',
+            statusCode: 400
+          }
+        });
+        return;
+      }
+
+      const updatedAd = await this.adsService.updateAd(id, updateData);
 
       const response: ApiResponse = {
         success: true,
@@ -189,37 +196,13 @@ export class AdsController {
       };
 
       res.json(response);
-    } catch (error) {
-      res.status(500).json({
+    } catch (error: any) {
+      const statusCode = error.statusCode || 500;
+      res.status(statusCode).json({
         success: false,
         error: {
-          message: error instanceof Error ? error.message : 'Failed to update ad',
-          statusCode: 500
-        }
-      });
-    }
-  }
-
-  @Put('/:id/toggle')
-  async toggleAd(req: Request, res: Response): Promise<void> {
-    try {
-      const { id } = req.params;
-      const { isActive } = req.body;
-
-      // Mock toggle - in real app, this would update database
-      const response: ApiResponse = {
-        success: true,
-        data: { id, isActive },
-        message: `Ad ${isActive ? 'activated' : 'deactivated'} successfully`
-      };
-
-      res.json(response);
-    } catch (error) {
-      res.status(500).json({
-        success: false,
-        error: {
-          message: error instanceof Error ? error.message : 'Failed to toggle ad',
-          statusCode: 500
+          message: error.message || 'Failed to update ad',
+          statusCode
         }
       });
     }
@@ -230,19 +213,33 @@ export class AdsController {
     try {
       const { id } = req.params;
 
-      // Mock deletion - in real app, this would delete from database
+      if (!id) {
+        res.status(400).json({
+          success: false,
+          error: {
+            message: 'Ad ID is required',
+            statusCode: 400
+          }
+        });
+        return;
+      }
+
+      const result = await this.adsService.deleteAd(id);
+
       const response: ApiResponse = {
         success: true,
+        data: result,
         message: 'Ad deleted successfully'
       };
 
       res.json(response);
-    } catch (error) {
-      res.status(500).json({
+    } catch (error: any) {
+      const statusCode = error.statusCode || 500;
+      res.status(statusCode).json({
         success: false,
         error: {
-          message: error instanceof Error ? error.message : 'Failed to delete ad',
-          statusCode: 500
+          message: error.message || 'Failed to delete ad',
+          statusCode
         }
       });
     }
