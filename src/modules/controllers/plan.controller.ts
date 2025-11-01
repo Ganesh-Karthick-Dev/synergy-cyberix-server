@@ -4,87 +4,89 @@ import { Validate } from '../../decorators/validation.decorator';
 import { Service } from '../../decorators/service.decorator';
 import { ApiResponse } from '../../types';
 import { body } from 'express-validator';
+import { PlanService } from '../services/plan.service';
 
 @Service()
 @Controller('/api/plans')
 export class PlanController {
+  private planService: PlanService;
+
+  constructor() {
+    this.planService = new PlanService();
+  }
+
   @Get('/')
   async getAllPlans(req: Request, res: Response): Promise<void> {
     try {
       const { search, status, isPopular } = req.query;
       
-      // Mock data based on plan-management/page.tsx structure
-      const plans = [
-        {
-          id: '1',
-          name: 'Basic Security Scan',
-          price: 299,
-          description: 'Comprehensive security assessment to identify vulnerabilities and protect your website from potential threats.',
-          features: ['Basic vulnerability scan', 'SSL certificate check', 'Security headers analysis', 'Basic penetration testing', 'Detailed security report'],
-          deliveryDays: 2,
-          isPopular: false,
-          isActive: true,
-          createdAt: '2024-01-01',
-          updatedAt: '2024-01-01'
-        },
-        {
-          id: '2',
-          name: 'Professional Security Audit',
-          price: 799,
-          description: 'Advanced security assessment with comprehensive vulnerability scanning and detailed remediation guidance.',
-          features: ['Full vulnerability assessment', 'OWASP Top 10 analysis', 'SQL injection testing', 'XSS vulnerability scan', 'Security recommendations', 'Priority-based remediation'],
-          deliveryDays: 5,
-          isPopular: true,
-          isActive: true,
-          createdAt: '2024-01-01',
-          updatedAt: '2024-01-01'
-        },
-        {
-          id: '3',
-          name: 'Enterprise Security Suite',
-          price: 1499,
-          description: 'Complete enterprise-grade security solution with continuous monitoring and advanced threat detection.',
-          features: ['Comprehensive security audit', 'Advanced penetration testing', 'Code security analysis', 'API security testing', 'Continuous monitoring', '24/7 security support', 'Compliance reporting'],
-          deliveryDays: 7,
-          isPopular: false,
-          isActive: true,
-          createdAt: '2024-01-01',
-          updatedAt: '2024-01-01'
-        }
-      ];
-
-      // Apply filters
-      let filteredPlans = plans;
-      
-      if (search) {
-        const searchTerm = (search as string).toLowerCase();
-        filteredPlans = filteredPlans.filter(plan => 
-          plan.name.toLowerCase().includes(searchTerm) ||
-          plan.description.toLowerCase().includes(searchTerm)
-        );
-      }
-      
-      if (status) {
-        filteredPlans = filteredPlans.filter(plan => plan.isActive === (status === 'active'));
-      }
-      
+      // Convert isPopular query param to boolean or undefined
+      let isPopularBool: boolean | undefined = undefined;
       if (isPopular !== undefined) {
-        filteredPlans = filteredPlans.filter(plan => plan.isPopular === (isPopular === 'true'));
+        if (typeof isPopular === 'string') {
+          isPopularBool = isPopular === 'true';
+        } else if (typeof isPopular === 'boolean') {
+          isPopularBool = isPopular;
+        }
       }
+      
+      const plans = await this.planService.getAllPlans({
+        search: search as string | undefined,
+        status: status as string | undefined,
+        isPopular: isPopularBool,
+      });
 
       const response: ApiResponse = {
         success: true,
-        data: filteredPlans,
+        data: plans,
         message: 'Plans retrieved successfully'
       };
 
       res.json(response);
-    } catch (error) {
-      res.status(500).json({
+    } catch (error: any) {
+      const statusCode = error.statusCode || 500;
+      res.status(statusCode).json({
         success: false,
         error: {
-          message: error instanceof Error ? error.message : 'Failed to retrieve plans',
-          statusCode: 500
+          message: error.message || 'Failed to retrieve plans',
+          statusCode
+        }
+      });
+    }
+  }
+
+  @Get('/:id')
+  async getPlanById(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      
+      if (!id) {
+        res.status(400).json({
+          success: false,
+          error: {
+            message: 'Plan ID is required',
+            statusCode: 400
+          }
+        });
+        return;
+      }
+      
+      const plan = await this.planService.getPlanById(id);
+
+      const response: ApiResponse = {
+        success: true,
+        data: plan,
+        message: 'Plan retrieved successfully'
+      };
+
+      res.json(response);
+    } catch (error: any) {
+      const statusCode = error.statusCode || 500;
+      res.status(statusCode).json({
+        success: false,
+        error: {
+          message: error.message || 'Failed to retrieve plan',
+          statusCode
         }
       });
     }
@@ -95,15 +97,14 @@ export class PlanController {
     body('name').notEmpty().withMessage('Plan name is required'),
     body('price').isNumeric().withMessage('Price must be a number'),
     body('description').notEmpty().withMessage('Description is required'),
-    body('features').isArray().withMessage('Features must be an array'),
+    body('features').notEmpty().withMessage('Features are required'),
     body('deliveryDays').isNumeric().withMessage('Delivery days must be a number')
   ])
   async createPlan(req: Request, res: Response): Promise<void> {
     try {
       const { name, price, description, features, deliveryDays, isPopular = false, isActive = true } = req.body;
 
-      const newPlan = {
-        id: Date.now().toString(),
+      const plan = await this.planService.createPlan({
         name,
         price: Number(price),
         description,
@@ -111,23 +112,22 @@ export class PlanController {
         deliveryDays: Number(deliveryDays),
         isPopular,
         isActive,
-        createdAt: new Date().toISOString().split('T')[0],
-        updatedAt: new Date().toISOString().split('T')[0]
-      };
+      });
 
       const response: ApiResponse = {
         success: true,
-        data: newPlan,
+        data: plan,
         message: 'Plan created successfully'
       };
 
       res.status(201).json(response);
-    } catch (error) {
-      res.status(500).json({
+    } catch (error: any) {
+      const statusCode = error.statusCode || 500;
+      res.status(statusCode).json({
         success: false,
         error: {
-          message: error instanceof Error ? error.message : 'Failed to create plan',
-          statusCode: 500
+          message: error.message || 'Failed to create plan',
+          statusCode
         }
       });
     }
@@ -137,14 +137,21 @@ export class PlanController {
   async updatePlan(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
+      
+      if (!id) {
+        res.status(400).json({
+          success: false,
+          error: {
+            message: 'Plan ID is required',
+            statusCode: 400
+          }
+        });
+        return;
+      }
+      
       const updateData = req.body;
 
-      // Mock update - in real app, this would update database
-      const updatedPlan = {
-        id,
-        ...updateData,
-        updatedAt: new Date().toISOString().split('T')[0]
-      };
+      const updatedPlan = await this.planService.updatePlan(id, updateData);
 
       const response: ApiResponse = {
         success: true,
@@ -153,35 +160,54 @@ export class PlanController {
       };
 
       res.json(response);
-    } catch (error) {
-      res.status(500).json({
+    } catch (error: any) {
+      const statusCode = error.statusCode || 500;
+      res.status(statusCode).json({
         success: false,
         error: {
-          message: error instanceof Error ? error.message : 'Failed to update plan',
-          statusCode: 500
+          message: error.message || 'Failed to update plan',
+          statusCode
         }
       });
     }
   }
 
-  @Delete('/:id')
-  async deletePlan(req: Request, res: Response): Promise<void> {
+  @Put('/:id/toggle-status')
+  async togglePlanStatus(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
 
-      // Mock deletion - in real app, this would delete from database
+      if (!id) {
+        res.status(400).json({
+          success: false,
+          error: {
+            message: 'Plan ID is required',
+            statusCode: 400
+          }
+        });
+        return;
+      }
+
+      // Get current plan to toggle status
+      const plan = await this.planService.getPlanById(id);
+      const newStatus = !plan.isActive;
+
+      const updatedPlan = await this.planService.updatePlan(id, { isActive: newStatus });
+
       const response: ApiResponse = {
         success: true,
-        message: 'Plan deleted successfully'
+        data: updatedPlan,
+        message: `Plan ${newStatus ? 'activated' : 'deactivated'} successfully`
       };
 
       res.json(response);
-    } catch (error) {
-      res.status(500).json({
+    } catch (error: any) {
+      const statusCode = error.statusCode || 500;
+      res.status(statusCode).json({
         success: false,
         error: {
-          message: error instanceof Error ? error.message : 'Failed to delete plan',
-          statusCode: 500
+          message: error.message || 'Failed to update plan status',
+          statusCode
         }
       });
     }

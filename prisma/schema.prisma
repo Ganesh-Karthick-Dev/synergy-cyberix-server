@@ -99,6 +99,8 @@ model ServicePlan {
   currency    String   @default("USD")
   billingCycle BillingCycle @default(MONTHLY)
   features    Json     // Store plan features as JSON
+  deliveryDays Int?    // Delivery time in days
+  isPopular    Boolean  @default(false)
   isActive    Boolean  @default(true)
   maxUsers    Int?
   maxStorage  BigInt? // in bytes

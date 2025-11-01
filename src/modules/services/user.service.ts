@@ -7,6 +7,7 @@ import { logger } from '../../utils/logger';
 import { generateRandomPassword, generateUsernameFromEmail } from '../../utils/password.utils';
 import { EmailService } from './email.service';
 import { Service, Inject } from '../../decorators/service.decorator';
+import { UserRole } from '@prisma/client';
 
 @Service()
 export class UserService {
@@ -136,7 +137,7 @@ export class UserService {
     });
 
     if (!servicePlan) {
-      throw new CustomError('Service plan not found', 400);
+      throw new CustomError('Service plan not found !!!!', 400);
     }
 
     // Create user subscription within the transaction
@@ -289,38 +290,158 @@ export class UserService {
     return user;
   }
 
-  async getAllUsers(page: number = 1, limit: number = 10, search?: string) {
+  async getAllUsers(page: number = 1, limit: number = 10, search?: string, status?: string, plan?: string) {
     const skip = (page - 1) * limit;
 
-    const where = search ? {
-      email: { contains: search, mode: 'insensitive' as const }
-    } : {};
+    // Build where clause for search
+    const whereConditions: any = {
+      // Exclude ADMIN users - only return regular users
+      role: UserRole.USER
+    };
+    
+    if (search) {
+      whereConditions.OR = [
+        { email: { contains: search, mode: 'insensitive' as const } },
+        { firstName: { contains: search, mode: 'insensitive' as const } },
+        { lastName: { contains: search, mode: 'insensitive' as const } }
+      ];
+    }
+
+    // Filter by status
+    if (status) {
+      // Map frontend status values to database status values
+      const statusMap: { [key: string]: string } = {
+        'Active': 'ACTIVE',
+        'Inactive': 'INACTIVE',
+        'Trial': 'ACTIVE', // Trial users are ACTIVE in DB
+        'Expired': 'INACTIVE'
+      };
+      whereConditions.status = statusMap[status] || status.toUpperCase();
+    }
+
+    // Filter by plan name - requires filtering by subscription relation
+    if (plan && plan.toLowerCase() !== 'free') {
+      whereConditions.subscriptions = {
+        some: {
+          status: 'ACTIVE',
+          plan: {
+            name: { equals: plan, mode: 'insensitive' as const }
+          }
+        }
+      };
+    }
 
     const [users, total] = await Promise.all([
       prisma.user.findMany({
-        where,
+        where: whereConditions,
         skip,
         take: limit,
         select: {
           id: true,
           email: true,
+          firstName: true,
+          lastName: true,
+          avatar: true,
+          phone: true,
           role: true,
           status: true,
           createdAt: true,
-          updatedAt: true
+          updatedAt: true,
+          lastLoginAt: true,
+          subscriptions: {
+            where: { status: 'ACTIVE' },
+            include: {
+              plan: {
+                select: {
+                  name: true,
+                  id: true
+                }
+              }
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 1
+          },
+          _count: {
+            select: {
+              securityReports: true
+            }
+          }
         },
         orderBy: { createdAt: 'desc' }
       }),
-      prisma.user.count({ where })
+      prisma.user.count({ where: whereConditions })
     ]);
 
+    // Transform users to match frontend format
+    const transformedUsers = users.map(user => {
+      const activeSubscription = user.subscriptions[0];
+      const planName = activeSubscription?.plan?.name || 'Free';
+      
+      // Map database status to frontend status
+      const statusMap: { [key: string]: string } = {
+        'ACTIVE': 'Active',
+        'INACTIVE': 'Inactive',
+        'SUSPENDED': 'Inactive',
+        'PENDING': 'Trial'
+      };
+
+      // Calculate name from firstName and lastName
+      const name = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email.split('@')[0];
+
+      // Calculate lastScan (time since last login)
+      let lastScan = 'Never';
+      if (user.lastLoginAt) {
+        const now = new Date();
+        const lastLogin = new Date(user.lastLoginAt);
+        const diffMs = now.getTime() - lastLogin.getTime();
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+        const diffDays = Math.floor(diffHours / 24);
+        
+        if (diffHours < 1) {
+          lastScan = 'Just now';
+        } else if (diffHours < 24) {
+          lastScan = `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+        } else if (diffDays < 7) {
+          lastScan = `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+        } else {
+          lastScan = `${Math.floor(diffDays / 7)} week${Math.floor(diffDays / 7) > 1 ? 's' : ''} ago`;
+        }
+      }
+
+      return {
+        id: user.id,
+        email: user.email,
+        name: name,
+        firstName: user.firstName || '',
+        lastName: user.lastName || '',
+        avatar: user.avatar || null,
+        phone: user.phone || null,
+        role: user.role,
+        status: statusMap[user.status] || 'Active',
+        plan: planName,
+        lastScan: lastScan,
+        scansCompleted: user._count.securityReports,
+        location: null, // Not in schema
+        bio: null, // Not in schema
+        company: null, // Not in schema
+        createdAt: user.createdAt.toISOString(),
+        updatedAt: user.updatedAt.toISOString()
+      };
+    });
+
+    // Handle "Free" plan filter - users without active subscriptions
+    let finalUsers = transformedUsers;
+    if (plan && plan.toLowerCase() === 'free') {
+      finalUsers = transformedUsers.filter(user => user.plan === 'Free');
+    }
+
     return {
-      users,
+      users: finalUsers,
       pagination: {
         page,
         limit,
-        total,
-        totalPages: Math.ceil(total / limit)
+        total: plan && plan.toLowerCase() === 'free' ? finalUsers.length : total,
+        totalPages: Math.ceil((plan && plan.toLowerCase() === 'free' ? finalUsers.length : total) / limit)
       }
     };
   }

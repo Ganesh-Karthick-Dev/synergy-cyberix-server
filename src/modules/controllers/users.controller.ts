@@ -4,132 +4,41 @@ import { Validate } from '../../decorators/validation.decorator';
 import { Service } from '../../decorators/service.decorator';
 import { ApiResponse } from '../../types';
 import { body, query } from 'express-validator';
+import { UserService } from '../services/user.service';
+import { prisma } from '../../config/db';
+import { UserRole } from '@prisma/client';
 
 @Service()
 @Controller('/api/users')
 export class UsersController {
+  private userService: UserService;
+
+  constructor() {
+    this.userService = new UserService();
+  }
+
   @Get('/')
   async getAllUsers(req: Request, res: Response): Promise<void> {
     try {
       const { page = 1, limit = 10, search, status, plan } = req.query;
       
-      // Mock data based on UsersTable.tsx structure
-      const users = [
-        {
-          id: 1,
-          name: "John Smith",
-          email: "john.smith@techcorp.com",
-          company: "TechCorp Solutions",
-          plan: "Professional",
-          status: "Active",
-          lastScan: "2 hours ago",
-          scansCompleted: 45,
-          avatar: "/images/user/user-17.jpg",
-          phone: "+1 (555) 123-4567",
-          location: "New York, USA",
-          bio: "IT Security Manager at TechCorp",
-          createdAt: "2024-01-15T10:30:00Z",
-          updatedAt: "2024-01-20T14:22:00Z"
-        },
-        {
-          id: 2,
-          name: "Sarah Johnson",
-          email: "sarah.j@startup.io",
-          company: "StartupIO",
-          plan: "Trial",
-          status: "Trial",
-          lastScan: "1 day ago",
-          scansCompleted: 8,
-          avatar: "/images/user/user-18.jpg",
-          phone: "+1 (555) 234-5678",
-          location: "San Francisco, USA",
-          bio: "Founder & CTO at StartupIO",
-          createdAt: "2024-01-18T09:15:00Z",
-          updatedAt: "2024-01-19T16:45:00Z"
-        },
-        {
-          id: 3,
-          name: "Mike Chen",
-          email: "mike.chen@enterprise.com",
-          company: "Enterprise Systems",
-          plan: "Enterprise",
-          status: "Active",
-          lastScan: "3 hours ago",
-          scansCompleted: 127,
-          avatar: "/images/user/user-19.jpg",
-          phone: "+1 (555) 345-6789",
-          location: "Seattle, USA",
-          bio: "Senior Security Engineer",
-          createdAt: "2024-01-10T14:20:00Z",
-          updatedAt: "2024-01-21T11:30:00Z"
-        },
-        {
-          id: 4,
-          name: "Emily Davis",
-          email: "emily.davis@freelance.com",
-          company: "Freelance Consultant",
-          plan: "Basic",
-          status: "Expired",
-          lastScan: "1 week ago",
-          scansCompleted: 23,
-          avatar: "/images/user/user-20.jpg",
-          phone: "+1 (555) 456-7890",
-          location: "Austin, USA",
-          bio: "Independent Security Consultant",
-          createdAt: "2024-01-05T16:45:00Z",
-          updatedAt: "2024-01-15T09:20:00Z"
-        },
-        {
-          id: 5,
-          name: "Alex Rodriguez",
-          email: "alex.r@agency.com",
-          company: "Digital Security Agency",
-          plan: "Professional",
-          status: "Active",
-          lastScan: "30 minutes ago",
-          scansCompleted: 89,
-          avatar: "/images/user/user-21.jpg",
-          phone: "+1 (555) 567-8901",
-          location: "Miami, USA",
-          bio: "Security Agency Director",
-          createdAt: "2024-01-12T13:10:00Z",
-          updatedAt: "2024-01-21T15:45:00Z"
-        }
-      ];
-
-      // Apply filters
-      let filteredUsers = users;
-      
-      if (search) {
-        const searchTerm = (search as string).toLowerCase();
-        filteredUsers = filteredUsers.filter(user => 
-          user.name.toLowerCase().includes(searchTerm) ||
-          user.email.toLowerCase().includes(searchTerm) ||
-          user.company.toLowerCase().includes(searchTerm)
-        );
-      }
-      
-      if (status) {
-        filteredUsers = filteredUsers.filter(user => user.status === status);
-      }
-      
-      if (plan) {
-        filteredUsers = filteredUsers.filter(user => user.plan === plan);
-      }
-
-      // Apply pagination
-      const startIndex = (Number(page) - 1) * Number(limit);
-      const endIndex = startIndex + Number(limit);
-      const paginatedUsers = filteredUsers.slice(startIndex, endIndex);
+      // Get users from database using UserService
+      const result = await this.userService.getAllUsers(
+        Number(page),
+        Number(limit),
+        search as string | undefined,
+        status as string | undefined,
+        plan as string | undefined
+      );
 
       const response: ApiResponse = {
         success: true,
         data: {
-          users: paginatedUsers,
-          total: filteredUsers.length,
-          page: Number(page),
-          limit: Number(limit),
-          totalPages: Math.ceil(filteredUsers.length / Number(limit))
+          users: result.users,
+          total: result.pagination.total,
+          page: result.pagination.page,
+          limit: result.pagination.limit,
+          totalPages: result.pagination.totalPages
         },
         message: 'Users retrieved successfully'
       };
@@ -151,27 +60,108 @@ export class UsersController {
     try {
       const { id } = req.params;
       
-      // Mock user data
-      const user = {
-        id: Number(id),
-        name: "John Smith",
-        email: "john.smith@techcorp.com",
-        company: "TechCorp Solutions",
-        plan: "Professional",
-        status: "Active",
-        lastScan: "2 hours ago",
-        scansCompleted: 45,
-        avatar: "/images/user/user-17.jpg",
-        phone: "+1 (555) 123-4567",
-        location: "New York, USA",
-        bio: "IT Security Manager at TechCorp",
-        createdAt: "2024-01-15T10:30:00Z",
-        updatedAt: "2024-01-20T14:22:00Z"
+      // Get user from database
+      const user = await prisma.user.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          avatar: true,
+          phone: true,
+          role: true,
+          status: true,
+          createdAt: true,
+          updatedAt: true,
+          lastLoginAt: true,
+          subscriptions: {
+            where: { status: 'ACTIVE' },
+            include: {
+              plan: {
+                select: {
+                  name: true,
+                  id: true
+                }
+              }
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 1
+          },
+          _count: {
+            select: {
+              securityReports: true
+            }
+          }
+        }
+      });
+
+      if (!user) {
+        res.status(404).json({
+          success: false,
+          error: {
+            message: 'User not found',
+            statusCode: 404
+          }
+        });
+        return;
+      }
+
+      // Transform user to match frontend format (same logic as getAllUsers)
+      const activeSubscription = user.subscriptions[0];
+      const planName = activeSubscription?.plan?.name || 'Free';
+      
+      const statusMap: { [key: string]: string } = {
+        'ACTIVE': 'Active',
+        'INACTIVE': 'Inactive',
+        'SUSPENDED': 'Inactive',
+        'PENDING': 'Trial'
+      };
+      
+      const name = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email.split('@')[0];
+
+      let lastScan = 'Never';
+      if (user.lastLoginAt) {
+        const now = new Date();
+        const lastLogin = new Date(user.lastLoginAt);
+        const diffMs = now.getTime() - lastLogin.getTime();
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+        const diffDays = Math.floor(diffHours / 24);
+        
+        if (diffHours < 1) {
+          lastScan = 'Just now';
+        } else if (diffHours < 24) {
+          lastScan = `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+        } else if (diffDays < 7) {
+          lastScan = `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+        } else {
+          lastScan = `${Math.floor(diffDays / 7)} week${Math.floor(diffDays / 7) > 1 ? 's' : ''} ago`;
+        }
+      }
+
+      const transformedUser = {
+        id: user.id,
+        email: user.email,
+        name: name,
+        firstName: user.firstName || '',
+        lastName: user.lastName || '',
+        avatar: user.avatar || null,
+        phone: user.phone || null,
+        role: user.role,
+        status: statusMap[user.status] || 'Active',
+        plan: planName,
+        lastScan: lastScan,
+        scansCompleted: user._count.securityReports,
+        location: null,
+        bio: null,
+        company: null,
+        createdAt: user.createdAt.toISOString(),
+        updatedAt: user.updatedAt.toISOString()
       };
 
       const response: ApiResponse = {
         success: true,
-        data: user,
+        data: transformedUser,
         message: 'User retrieved successfully'
       };
 
@@ -189,24 +179,72 @@ export class UsersController {
 
   @Put('/:id')
   @Validate([
-    body('name').optional().isString().withMessage('Name must be a string'),
+    body('firstName').optional().isString().withMessage('First name must be a string'),
+    body('lastName').optional().isString().withMessage('Last name must be a string'),
     body('email').optional().isEmail().withMessage('Email must be valid'),
-    body('company').optional().isString().withMessage('Company must be a string'),
     body('phone').optional().isString().withMessage('Phone must be a string'),
-    body('location').optional().isString().withMessage('Location must be a string'),
-    body('bio').optional().isString().withMessage('Bio must be a string')
+    body('avatar').optional().isString().withMessage('Avatar must be a string')
   ])
   async updateUser(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const updateData = req.body;
+      const { firstName, lastName, email, phone, avatar } = req.body;
 
-      // Mock update
-      const updatedUser = {
-        id: Number(id),
-        ...updateData,
-        updatedAt: new Date().toISOString()
-      };
+      // Check if user exists
+      const existingUser = await prisma.user.findUnique({
+        where: { id }
+      });
+
+      if (!existingUser) {
+        res.status(404).json({
+          success: false,
+          error: {
+            message: 'User not found',
+            statusCode: 404
+          }
+        });
+        return;
+      }
+
+      // Check if email is being changed and if it's already taken
+      if (email && email !== existingUser.email) {
+        const emailExists = await prisma.user.findUnique({
+          where: { email }
+        });
+        if (emailExists) {
+          res.status(400).json({
+            success: false,
+            error: {
+              message: 'Email already exists',
+              statusCode: 400
+            }
+          });
+          return;
+        }
+      }
+
+      // Update user in database
+      const updatedUser = await prisma.user.update({
+        where: { id },
+        data: {
+          ...(firstName !== undefined && { firstName }),
+          ...(lastName !== undefined && { lastName }),
+          ...(email !== undefined && { email }),
+          ...(phone !== undefined && { phone }),
+          ...(avatar !== undefined && { avatar })
+        },
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          avatar: true,
+          phone: true,
+          role: true,
+          status: true,
+          updatedAt: true
+        }
+      });
 
       const response: ApiResponse = {
         success: true,
@@ -235,16 +273,51 @@ export class UsersController {
       const { id } = req.params;
       const { status } = req.body;
 
-      // Mock status update
-      const updatedUser = {
-        id: Number(id),
-        status,
-        updatedAt: new Date().toISOString()
+      // Check if user exists
+      const existingUser = await prisma.user.findUnique({
+        where: { id }
+      });
+
+      if (!existingUser) {
+        res.status(404).json({
+          success: false,
+          error: {
+            message: 'User not found',
+            statusCode: 404
+          }
+        });
+        return;
+      }
+
+      // Map frontend status to database status
+      const statusMap: { [key: string]: string } = {
+        'Active': 'ACTIVE',
+        'Inactive': 'INACTIVE',
+        'Trial': 'ACTIVE',
+        'Expired': 'INACTIVE'
       };
+
+      const dbStatus = statusMap[status] || status.toUpperCase();
+
+      // Update user status in database
+      const updatedUser = await prisma.user.update({
+        where: { id },
+        data: {
+          status: dbStatus as any
+        },
+        select: {
+          id: true,
+          status: true,
+          updatedAt: true
+        }
+      });
 
       const response: ApiResponse = {
         success: true,
-        data: updatedUser,
+        data: {
+          id: updatedUser.id,
+          status: status // Return frontend format status
+        },
         message: 'User status updated successfully'
       };
 
@@ -265,7 +338,27 @@ export class UsersController {
     try {
       const { id } = req.params;
 
-      // Mock deletion
+      // Check if user exists
+      const existingUser = await prisma.user.findUnique({
+        where: { id }
+      });
+
+      if (!existingUser) {
+        res.status(404).json({
+          success: false,
+          error: {
+            message: 'User not found',
+            statusCode: 404
+          }
+        });
+        return;
+      }
+
+      // Delete user from database (cascade will handle related records)
+      await prisma.user.delete({
+        where: { id }
+      });
+
       const response: ApiResponse = {
         success: true,
         message: 'User deleted successfully'
@@ -286,14 +379,55 @@ export class UsersController {
   @Get('/stats/overview')
   async getUserStats(req: Request, res: Response): Promise<void> {
     try {
+      // Get statistics from database - exclude ADMIN users (only regular users)
+      const userWhere = { role: UserRole.USER };
+      const [
+        totalUsers,
+        activeUsers,
+        inactiveUsers,
+        newUsersToday,
+        totalScans,
+        usersWithSubscriptions
+      ] = await Promise.all([
+        prisma.user.count({ where: userWhere }),
+        prisma.user.count({ where: { ...userWhere, status: 'ACTIVE' } }),
+        prisma.user.count({ where: { ...userWhere, status: 'INACTIVE' } }),
+        prisma.user.count({
+          where: {
+            ...userWhere,
+            createdAt: {
+              gte: new Date(new Date().setHours(0, 0, 0, 0))
+            }
+          }
+        }),
+        prisma.securityReport.count({
+          where: {
+            user: {
+              role: UserRole.USER
+            }
+          }
+        }),
+        prisma.userSubscription.count({ 
+          where: { 
+            status: 'ACTIVE',
+            user: {
+              role: UserRole.USER
+            }
+          } 
+        })
+      ]);
+
+      // Calculate average scans per user
+      const averageScansPerUser = totalUsers > 0 ? totalScans / totalUsers : 0;
+
       const stats = {
-        totalUsers: 1250,
-        activeUsers: 1100,
-        trialUsers: 100,
-        expiredUsers: 50,
-        newUsersToday: 25,
-        totalScansCompleted: 15420,
-        averageScansPerUser: 12.3
+        totalUsers,
+        activeUsers,
+        trialUsers: usersWithSubscriptions, // Users with active subscriptions
+        expiredUsers: inactiveUsers,
+        newUsersToday,
+        totalScansCompleted: totalScans,
+        averageScansPerUser: Math.round(averageScansPerUser * 10) / 10 // Round to 1 decimal
       };
 
       const response: ApiResponse = {
