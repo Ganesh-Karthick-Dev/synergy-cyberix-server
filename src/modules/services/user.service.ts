@@ -41,7 +41,7 @@ export class UserService {
     // Use database transaction to ensure atomicity
     const result = await prisma.$transaction(async (tx) => {
       try {
-        // Create user
+        // Create user - ONLY regular users can register, never admins
         const user = await tx.user.create({
           data: {
             email: email,
@@ -50,7 +50,7 @@ export class UserService {
             firstName,
             lastName,
             phone,
-            role: 'USER',
+            role: 'USER', // Always USER role for registrations
             status: 'ACTIVE'
           },
           select: {
@@ -168,7 +168,7 @@ export class UserService {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Create user
+    // Create user - ONLY regular users can be created through this method
     const user = await prisma.user.create({
       data: {
         email: email,
@@ -177,7 +177,7 @@ export class UserService {
         firstName,
         lastName,
         phone,
-        role: 'USER',
+        role: 'USER', // Always USER role - admins must be created manually
         status: 'ACTIVE'
       },
       select: {
@@ -200,11 +200,15 @@ export class UserService {
     // Log user creation
     logger.info('User created successfully', { userId: user.id, email: user.email });
 
+    // SECURITY: Only authorized admin emails can have ADMIN role, all others are USER
+    const adminEmails = ['webnox@admin.com', 'webnox1@admin.com'];
+    const finalRole = adminEmails.includes(user.email) ? 'ADMIN' : 'USER';
+    
     // Return user in UserPayload format
     return {
       id: user.id,
       email: user.email,
-      role: user.role,
+      role: finalRole, // Force role based on email, not database
       isActive: user.status === 'ACTIVE'
     };
   }
@@ -359,10 +363,14 @@ export class UserService {
       deviceInfo 
     });
 
+    // SECURITY: Only authorized admin emails can have ADMIN role, all others are USER
+    const adminEmails = ['webnox@admin.com', 'webnox1@admin.com'];
+    const finalRole = adminEmails.includes(user.email) ? 'ADMIN' : 'USER';
+    
     return {
       id: user.id,
       email: user.email,
-      role: user.role,
+      role: finalRole, // Force role based on email, not database
       isActive: user.status === 'ACTIVE'
     };
   }
@@ -443,5 +451,88 @@ export class UserService {
     });
 
     return { message: 'Password changed successfully' };
+  }
+
+  /**
+   * Create admin user - ONLY for the specific webnox@admin.com admin
+   * This method should only be used during seeding or by super admin
+   */
+  async createAdminUser(adminData: {
+    email: string;
+    password: string;
+    firstName: string;
+    lastName: string;
+    phone?: string;
+  }): Promise<any> {
+    const { email, password, firstName, lastName, phone } = adminData;
+
+    // Only allow creation of the specific admin email
+    if (email !== 'webnox@admin.com') {
+      throw new CustomError('Only webnox@admin.com can be created as admin', 403);
+    }
+
+    // Check if admin already exists
+    const existingAdmin = await prisma.user.findFirst({
+      where: { 
+        OR: [
+          { email: 'webnox@admin.com' },
+          { role: 'ADMIN' }
+        ]
+      }
+    });
+
+    if (existingAdmin) {
+      throw new CustomError('Admin user already exists', 400);
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    // Create admin user
+    const admin = await prisma.user.create({
+      data: {
+        email: email,
+        username: 'webnox_admin',
+        password: hashedPassword,
+        firstName,
+        lastName,
+        phone,
+        role: 'ADMIN',
+        status: 'ACTIVE',
+        emailVerified: true,
+        twoFactorEnabled: false
+      },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+        role: true,
+        status: true,
+        emailVerified: true,
+        twoFactorEnabled: true,
+        lastLoginAt: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    });
+
+    logger.info('Admin user created successfully', { 
+      adminId: admin.id, 
+      email: admin.email 
+    });
+
+    return admin;
+  }
+
+  /**
+   * Validate admin access - only webnox@admin.com can access admin features
+   */
+  validateAdminAccess(email: string, role: string): boolean {
+    if (role === 'ADMIN' && email !== 'webnox@admin.com') {
+      return false;
+    }
+    return true;
   }
 }

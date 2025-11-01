@@ -16,6 +16,13 @@ try {
 interface Config {
   port: number;
   nodeEnv: string;
+  mode: 'development' | 'production';
+  security: {
+    singleDeviceLogin: boolean;
+    loginBlocking: boolean;
+    emailNotifications: boolean;
+    adminAccessControl: boolean;
+  };
   database: {
     url: string;
   };
@@ -50,6 +57,13 @@ interface Config {
 const config: Config = {
   port: parseInt(process.env.PORT || '9000', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
+  mode: (process.env.APP_MODE || process.env.NODE_ENV || 'development') as 'development' | 'production',
+  security: {
+    singleDeviceLogin: process.env.SINGLE_DEVICE_LOGIN === 'true' || (process.env.APP_MODE || process.env.NODE_ENV || 'development') === 'production',
+    loginBlocking: process.env.LOGIN_BLOCKING === 'true' || (process.env.APP_MODE || process.env.NODE_ENV || 'development') === 'production',
+    emailNotifications: process.env.EMAIL_NOTIFICATIONS === 'true' || (process.env.APP_MODE || process.env.NODE_ENV || 'development') === 'production',
+    adminAccessControl: process.env.ADMIN_ACCESS_CONTROL === 'true' || (process.env.APP_MODE || process.env.NODE_ENV || 'development') === 'production'
+  },
   
   database: {
     url: process.env.DATABASE_URL || (() => {

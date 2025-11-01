@@ -202,6 +202,274 @@ export class AuthService {
   }
 
   /**
+   * Check if user can login (single device enforcement)
+   */
+  async canUserLogin(userId: string): Promise<{
+    canLogin: boolean;
+    reason?: string;
+    existingSession?: any;
+  }> {
+    try {
+      const existingSessions = await this.getUserSessions(userId);
+      
+      if (existingSessions.length > 0) {
+        return {
+          canLogin: false,
+          reason: 'User already logged in on another device',
+          existingSession: existingSessions[0]
+        };
+      }
+      
+      return {
+        canLogin: true
+      };
+    } catch (error) {
+      throw new CustomError('Failed to check login eligibility', 500);
+    }
+  }
+
+  /**
+   * Force logout user from all devices (for admin use)
+   */
+  async forceLogoutUser(userId: string, adminUserId: string, reason: string): Promise<void> {
+    try {
+      // Get current sessions before invalidating
+      const currentSessions = await this.getUserSessions(userId);
+      
+      // Invalidate all sessions
+      await this.invalidateAllUserSessions(userId);
+      
+      // Log the forced logout
+      await this.logLoginAttempt(
+        userId,
+        '', // Email will be fetched if needed
+        true,
+        undefined,
+        undefined,
+        `Forced logout by admin ${adminUserId}: ${reason}. Previous sessions: ${currentSessions.length}`
+      );
+    } catch (error) {
+      throw new CustomError('Failed to force logout user', 500);
+    }
+  }
+
+  /**
+   * Check if user is blocked due to failed login attempts
+   */
+  async isUserBlocked(email: string): Promise<{
+    isBlocked: boolean;
+    attempts: number;
+    blockedAt: Date | null;
+    expiresAt: Date | null;
+    remainingMinutes: number;
+  }> {
+    try {
+      const block = await prisma.loginBlock.findUnique({
+        where: { email }
+      });
+
+      if (!block || !block.isActive) {
+        return {
+          isBlocked: false,
+          attempts: 0,
+          blockedAt: null,
+          expiresAt: null,
+          remainingMinutes: 0
+        };
+      }
+
+      // Check if block has expired
+      if (new Date() > block.expiresAt) {
+        // Remove expired block
+        await prisma.loginBlock.delete({
+          where: { id: block.id }
+        });
+
+        return {
+          isBlocked: false,
+          attempts: 0,
+          blockedAt: null,
+          expiresAt: null,
+          remainingMinutes: 0
+        };
+      }
+
+      // Calculate remaining minutes
+      const remainingMs = block.expiresAt.getTime() - new Date().getTime();
+      const remainingMinutes = Math.ceil(remainingMs / (1000 * 60));
+
+      return {
+        isBlocked: true,
+        attempts: block.attempts,
+        blockedAt: block.blockedAt,
+        expiresAt: block.expiresAt,
+        remainingMinutes: Math.max(0, remainingMinutes)
+      };
+    } catch (error) {
+      throw new CustomError('Failed to check user block status', 500);
+    }
+  }
+
+  /**
+   * Record failed login attempt and handle blocking
+   */
+  async recordFailedLoginAttempt(
+    email: string,
+    ipAddress?: string,
+    userAgent?: string,
+    reason?: string
+  ): Promise<{
+    isBlocked: boolean;
+    attempts: number;
+    remainingMinutes: number;
+  }> {
+    try {
+      const MAX_ATTEMPTS = 3;
+      const BLOCK_DURATION_MINUTES = 5;
+
+      // Check if user is already blocked
+      const currentBlock = await this.isUserBlocked(email);
+      if (currentBlock.isBlocked) {
+        return {
+          isBlocked: true,
+          attempts: currentBlock.attempts,
+          remainingMinutes: currentBlock.remainingMinutes
+        };
+      }
+
+      // Get or create login block record
+      const existingBlock = await prisma.loginBlock.findUnique({
+        where: { email }
+      });
+
+      if (existingBlock) {
+        // Update existing block
+        const newAttempts = existingBlock.attempts + 1;
+        const isBlocked = newAttempts >= MAX_ATTEMPTS;
+        
+        const updatedBlock = await prisma.loginBlock.update({
+          where: { id: existingBlock.id },
+          data: {
+            attempts: newAttempts,
+            isActive: isBlocked,
+            blockedAt: isBlocked ? new Date() : existingBlock.blockedAt,
+            expiresAt: isBlocked ? new Date(Date.now() + BLOCK_DURATION_MINUTES * 60 * 1000) : existingBlock.expiresAt,
+            ipAddress: ipAddress || existingBlock.ipAddress
+          }
+        });
+
+        if (isBlocked) {
+          // Log the blocking event
+          await this.logLoginAttempt(
+            '', // No userId for failed attempts
+            email,
+            false,
+            ipAddress,
+            userAgent,
+            `Account blocked after ${MAX_ATTEMPTS} failed attempts. Blocked until ${updatedBlock.expiresAt.toISOString()}`
+          );
+
+          // Send suspicious activity email to user (only in production mode)
+          if (process.env.EMAIL_NOTIFICATIONS === 'true' || process.env.APP_MODE === 'production') {
+            try {
+              const { EmailService } = await import('./email.service');
+              const emailService = new EmailService();
+              
+              await emailService.sendSuspiciousActivityAlert(email, {
+                type: 'ACCOUNT_BLOCKED',
+                attempts: newAttempts,
+                ipAddress,
+                userAgent,
+                blockedAt: updatedBlock.blockedAt,
+                expiresAt: updatedBlock.expiresAt,
+                remainingMinutes: BLOCK_DURATION_MINUTES
+              });
+
+              // Send admin notification
+              await emailService.sendAdminSecurityAlert('webnox@admin.com', {
+                type: 'ACCOUNT_BLOCKED',
+                userEmail: email,
+                attempts: newAttempts,
+                ipAddress,
+                userAgent,
+                timestamp: new Date()
+              });
+            } catch (emailError) {
+              console.error('Failed to send suspicious activity emails:', emailError);
+              // Don't throw error to avoid breaking the login flow
+            }
+          }
+        }
+
+        return {
+          isBlocked,
+          attempts: newAttempts,
+          remainingMinutes: isBlocked ? BLOCK_DURATION_MINUTES : 0
+        };
+      } else {
+        // Create new block record
+        const newAttempts = 1;
+        const isBlocked = newAttempts >= MAX_ATTEMPTS;
+        
+        const newBlock = await prisma.loginBlock.create({
+          data: {
+            email,
+            attempts: newAttempts,
+            isActive: isBlocked,
+            blockedAt: isBlocked ? new Date() : new Date(),
+            expiresAt: isBlocked ? new Date(Date.now() + BLOCK_DURATION_MINUTES * 60 * 1000) : new Date(),
+            ipAddress
+          }
+        });
+
+        return {
+          isBlocked,
+          attempts: newAttempts,
+          remainingMinutes: isBlocked ? BLOCK_DURATION_MINUTES : 0
+        };
+      }
+    } catch (error) {
+      throw new CustomError('Failed to record failed login attempt', 500);
+    }
+  }
+
+  /**
+   * Clear login block for successful login
+   */
+  async clearLoginBlock(email: string): Promise<void> {
+    try {
+      await prisma.loginBlock.deleteMany({
+        where: { email }
+      });
+    } catch (error) {
+      // Don't throw error for cleanup failures
+      console.error('Failed to clear login block:', error);
+    }
+  }
+
+  /**
+   * Clean up expired login blocks
+   */
+  async cleanupExpiredBlocks(): Promise<void> {
+    try {
+      const result = await prisma.loginBlock.deleteMany({
+        where: {
+          OR: [
+            { expiresAt: { lt: new Date() } },
+            { isActive: false }
+          ]
+        }
+      });
+      
+      if (result.count > 0) {
+        console.log(`Cleaned up ${result.count} expired login blocks`);
+      }
+    } catch (error) {
+      console.error('Failed to cleanup expired blocks:', error);
+    }
+  }
+
+  /**
    * Clean up expired sessions (can be called periodically)
    */
   async cleanupExpiredSessions(): Promise<void> {

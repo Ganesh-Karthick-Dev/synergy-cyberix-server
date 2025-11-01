@@ -10,6 +10,7 @@ import { ApiResponse } from '../../types';
 import { authenticate } from '../../middlewares/auth.middleware';
 import { prisma } from '../../config/db';
 import { Use } from '../../decorators/middleware.decorator';
+import { config } from '../../config/env.config';
 
 @Service()
 @Controller('/api/auth')
@@ -35,47 +36,166 @@ export class AuthController {
 
       console.log('req.body', req.body);
       
+      // Check if user is blocked due to failed attempts (only in production mode)
+      if (config.security.loginBlocking) {
+        const blockStatus = await this.authService.isUserBlocked(email);
+        if (blockStatus.isBlocked) {
+          res.status(423).json({
+            success: false,
+            error: { 
+              message: `Account temporarily blocked due to multiple failed login attempts. Please try again in ${blockStatus.remainingMinutes} minutes.`, 
+              statusCode: 423,
+              code: 'ACCOUNT_BLOCKED',
+              details: {
+                attempts: blockStatus.attempts,
+                blockedAt: blockStatus.blockedAt,
+                expiresAt: blockStatus.expiresAt,
+                remainingMinutes: blockStatus.remainingMinutes
+              }
+            }
+          });
+          return;
+        }
+      }
+      
       const user = await this.userService.validateCredentials({ email, password });
       if (!user) {
-        // Log failed login attempt
-        await this.authService.logLoginAttempt(
-          '', // No userId for failed attempts
-          email,
-          false,
-          req.ip,
-          req.get('User-Agent'),
-          'Invalid credentials'
-        );
-        
-        res.status(401).json({
-          success: false,
-          error: { message: 'Invalid credentials', statusCode: 401 }
-        });
+        // Record failed login attempt and check for blocking (only in production mode)
+        if (config.security.loginBlocking) {
+          const blockResult = await this.authService.recordFailedLoginAttempt(
+            email,
+            req.ip,
+            req.get('User-Agent'),
+            'Invalid credentials'
+          );
+
+          // Log failed login attempt
+          await this.authService.logLoginAttempt(
+            '', // No userId for failed attempts
+            email,
+            false,
+            req.ip,
+            req.get('User-Agent'),
+            `Invalid credentials. Attempt ${blockResult.attempts}/3`
+          );
+          
+          if (blockResult.isBlocked) {
+            res.status(423).json({
+              success: false,
+              error: { 
+                message: `Account blocked after 3 failed attempts. Please try again in ${blockResult.remainingMinutes} minutes.`, 
+                statusCode: 423,
+                code: 'ACCOUNT_BLOCKED',
+                details: {
+                  attempts: blockResult.attempts,
+                  remainingMinutes: blockResult.remainingMinutes
+                }
+              }
+            });
+          } else {
+            res.status(401).json({
+              success: false,
+              error: { 
+                message: `Invalid credentials. ${3 - blockResult.attempts} attempts remaining.`, 
+                statusCode: 401,
+                code: 'INVALID_CREDENTIALS',
+                details: {
+                  attempts: blockResult.attempts,
+                  remainingAttempts: 3 - blockResult.attempts
+                }
+              }
+            });
+          }
+        } else {
+          // Development mode - simple error response
+          res.status(401).json({
+            success: false,
+            error: { 
+              message: 'Invalid credentials', 
+              statusCode: 401,
+              code: 'INVALID_CREDENTIALS'
+            }
+          });
+        }
         return;
       }
 
-      // Check if user already has an active session
-      const existingSessions = await this.authService.getUserSessions(user.id);
-      if (existingSessions.length > 0) {
-        // Log failed login attempt due to existing session
+      // SECURITY: Double-check admin access - only authorized admin emails can be admin
+      const adminEmails = ['webnox@admin.com', 'webnox1@admin.com'];
+      if (user.role === 'ADMIN' && !adminEmails.includes(email)) {
+        // Log failed admin login attempt
         await this.authService.logLoginAttempt(
           user.id,
           email,
           false,
           req.ip,
           req.get('User-Agent'),
-          'User already logged in on another device'
+          'SECURITY ALERT: Unauthorized admin login attempt - only authorized admin emails can login as admin'
         );
+
+        // Send admin security alert for unauthorized admin access (only in production mode)
+        if (config.security.emailNotifications) {
+          try {
+            const { EmailService } = await import('../services/email.service');
+            const emailService = new EmailService();
+            
+            await emailService.sendAdminSecurityAlert('webnox@admin.com', {
+              type: 'UNAUTHORIZED_ADMIN_ACCESS',
+              userEmail: email,
+              attempts: 1,
+              ipAddress: req.ip,
+              userAgent: req.get('User-Agent'),
+              timestamp: new Date()
+            });
+          } catch (emailError) {
+            console.error('Failed to send admin security alert:', emailError);
+          }
+        }
         
-        res.status(409).json({
+        res.status(403).json({
           success: false,
           error: { 
-            message: 'Another user is already logged in with this account. Please logout from other devices first or contact support.', 
-            statusCode: 409,
-            code: 'USER_ALREADY_LOGGED_IN'
+            message: 'Access denied. Admin login is restricted to authorized personnel only.', 
+            statusCode: 403,
+            code: 'ADMIN_ACCESS_DENIED'
           }
         });
         return;
+      }
+
+      // Check if user already has an active session (Single Device Login Enforcement)
+      // Only enforce in production mode or when explicitly enabled
+      if (config.security.singleDeviceLogin) {
+        const existingSessions = await this.authService.getUserSessions(user.id);
+        if (existingSessions.length > 0) {
+          // Get details of the existing session for better logging
+          const existingSession = existingSessions[0];
+          
+          // Log failed login attempt due to existing session with detailed info
+          await this.authService.logLoginAttempt(
+            user.id,
+            email,
+            false,
+            req.ip,
+            req.get('User-Agent'),
+            `User already logged in on another device. Existing session: ${existingSession.deviceInfo || 'Unknown Device'} (IP: ${existingSession.ipAddress || 'Unknown'})`
+          );
+          
+          res.status(409).json({
+            success: false,
+            error: { 
+              message: 'This account is already logged in on another device. Only one device can be logged in at a time. Please logout from the other device first or contact support if you believe this is an error.', 
+              statusCode: 409,
+              code: 'USER_ALREADY_LOGGED_IN',
+              details: {
+                existingDevice: existingSession.deviceInfo || 'Unknown Device',
+                existingIp: existingSession.ipAddress || 'Unknown',
+                existingLoginTime: existingSession.createdAt
+              }
+            }
+          });
+          return;
+        }
       }
 
       const tokens = this.authService.generateTokens({
@@ -123,6 +243,9 @@ export class AuthController {
         maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
       });
 
+      // Clear any existing login block on successful login
+      await this.authService.clearLoginBlock(email);
+
       // Log successful login attempt
       await this.authService.logLoginAttempt(
         user.id,
@@ -163,29 +286,32 @@ export class AuthController {
     try {
       const accessToken = req.cookies.accessToken;
       let userId = '';
+      let userEmail = '';
       
       if (accessToken) {
         // Get user info before invalidating session
         try {
           const payload = this.authService.verifyAccessToken(accessToken);
           userId = payload.userId;
+          userEmail = payload.email;
         } catch (error) {
           // Token is invalid, continue with logout
+          console.log('Invalid token during logout:', error);
         }
         
         // Invalidate the session
         await this.authService.invalidateSession(accessToken);
       }
 
-      // Log logout attempt
+      // Log logout attempt with detailed information
       if (userId) {
         await this.authService.logLoginAttempt(
           userId,
-          '', // Email not available in logout
-          true,
+          userEmail,
+          true, // Success = true for logout
           req.ip,
           req.get('User-Agent'),
-          'User logout'
+          'User logout - Single device session ended'
         );
       }
 
@@ -195,7 +321,11 @@ export class AuthController {
 
       const response: ApiResponse = {
         success: true,
-        message: 'Logout successful'
+        message: 'Logout successful. You can now login from another device.',
+        data: {
+          singleDeviceEnforced: true,
+          message: 'Single device login is enforced. Only one device can be logged in at a time.'
+        }
       };
 
       res.json(response);
@@ -451,6 +581,149 @@ export class AuthController {
     }
   }
 
+  @Get('/profile/public')
+  async getPublicProfile(req: Request, res: Response): Promise<void> {
+    try {
+      const { email } = req.query;
+
+      if (!email) {
+        res.status(400).json({
+          success: false,
+          error: { message: 'Email parameter is required', statusCode: 400 }
+        });
+        return;
+      }
+
+      // Get user data from users table without authentication
+      const user = await prisma.user.findUnique({
+        where: { email: email as string },
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          phone: true,
+          avatar: true,
+          role: true,
+          status: true,
+          emailVerified: true,
+          twoFactorEnabled: true,
+          lastLoginAt: true,
+          createdAt: true,
+          updatedAt: true
+        }
+      });
+
+      if (!user) {
+        res.status(404).json({
+          success: false,
+          error: { message: 'User not found', statusCode: 404 }
+        });
+        return;
+      }
+
+      // Get user subscription data
+      const subscription = await prisma.userSubscription.findFirst({
+        where: { userId: user.id },
+        include: {
+          plan: {
+            select: {
+              id: true,
+              name: true,
+              description: true,
+              price: true,
+              billingCycle: true,
+              features: true
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      // Get user's login logs count
+      const loginLogsCount = await prisma.loginLog.count({
+        where: { userId: user.id }
+      });
+
+      // Get recent login logs (last 5)
+      const recentLogins = await prisma.loginLog.findMany({
+        where: { userId: user.id },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        select: {
+          id: true,
+          success: true,
+          ipAddress: true,
+          userAgent: true,
+          reason: true,
+          createdAt: true
+        }
+      });
+
+      // Get user's active sessions
+      const activeSessions = await prisma.session.findMany({
+        where: { 
+          userId: user.id,
+          expiresAt: { gt: new Date() }
+        },
+        select: {
+          id: true,
+          deviceInfo: true,
+          ipAddress: true,
+          userAgent: true,
+          createdAt: true,
+          expiresAt: true
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      const response: ApiResponse = {
+        success: true,
+        data: {
+          user: {
+            ...user,
+            // Override role based on authorized admin emails
+            role: ['webnox@admin.com', 'webnox1@admin.com'].includes(user.email) ? 'ADMIN' : user.role
+          },
+          subscription: subscription ? {
+            id: subscription.id,
+            plan: subscription.plan,
+            status: subscription.status,
+            startDate: subscription.startDate,
+            endDate: subscription.endDate,
+            autoRenew: subscription.autoRenew
+          } : null,
+          stats: {
+            loginLogsCount,
+            activeSessionsCount: activeSessions.length,
+            isOnline: activeSessions.length > 0
+          },
+          recentLogins,
+          activeSessions: activeSessions.map(session => ({
+            id: session.id,
+            deviceInfo: session.deviceInfo,
+            ipAddress: session.ipAddress,
+            userAgent: session.userAgent,
+            loginTime: session.createdAt,
+            expiresAt: session.expiresAt,
+            isActive: session.expiresAt > new Date()
+          }))
+        },
+        message: 'Public profile retrieved successfully'
+      };
+
+      res.json(response);
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: {
+          message: error instanceof Error ? error.message : 'Failed to retrieve public profile',
+          statusCode: 500
+        }
+      });
+    }
+  }
+
   @Post('/logout-all')
   @Use(authenticate)
   async logoutAllDevices(req: Request, res: Response): Promise<void> {
@@ -463,8 +736,21 @@ export class AuthController {
         return;
       }
 
+      // Get current sessions before invalidating for logging
+      const currentSessions = await this.authService.getUserSessions(req.user.id);
+      
       // Invalidate all sessions for this user
       await this.authService.invalidateAllUserSessions(req.user.id);
+
+      // Log the forced logout of all devices
+      await this.authService.logLoginAttempt(
+        req.user.id,
+        req.user.email,
+        true,
+        req.ip,
+        req.get('User-Agent'),
+        `Forced logout from all devices. Previous sessions: ${currentSessions.length}`
+      );
 
       // Clear current session cookies
       res.clearCookie('accessToken');
@@ -472,7 +758,12 @@ export class AuthController {
 
       const response: ApiResponse = {
         success: true,
-        message: 'Logged out from all devices successfully'
+        message: 'Logged out from all devices successfully. You can now login from any device.',
+        data: {
+          singleDeviceEnforced: true,
+          previousSessionsCount: currentSessions.length,
+          message: 'Single device login is enforced. Only one device can be logged in at a time.'
+        }
       };
 
       res.json(response);
@@ -481,6 +772,93 @@ export class AuthController {
         success: false,
         error: {
           message: error instanceof Error ? error.message : 'Failed to logout from all devices',
+          statusCode: 500
+        }
+      });
+    }
+  }
+
+  @Get('/block-status/:email')
+  async getBlockStatus(req: Request, res: Response): Promise<void> {
+    try {
+      const { email } = req.params;
+
+      if (!email) {
+        res.status(400).json({
+          success: false,
+          error: { message: 'Email is required', statusCode: 400 }
+        });
+        return;
+      }
+
+      const blockStatus = await this.authService.isUserBlocked(email);
+
+      const response: ApiResponse = {
+        success: true,
+        data: {
+          email,
+          isBlocked: blockStatus.isBlocked,
+          attempts: blockStatus.attempts,
+          blockedAt: blockStatus.blockedAt,
+          expiresAt: blockStatus.expiresAt,
+          remainingMinutes: blockStatus.remainingMinutes,
+          message: blockStatus.isBlocked 
+            ? `Account is blocked. Try again in ${blockStatus.remainingMinutes} minutes.`
+            : 'Account is not blocked.'
+        },
+        message: 'Block status retrieved successfully'
+      };
+
+      res.json(response);
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: {
+          message: error instanceof Error ? error.message : 'Failed to get block status',
+          statusCode: 500
+        }
+      });
+    }
+  }
+
+  @Get('/session-status')
+  @Use(authenticate)
+  async getSessionStatus(req: Request, res: Response): Promise<void> {
+    try {
+      if (!req.user) {
+        res.status(401).json({
+          success: false,
+          error: { message: 'Authentication required', statusCode: 401 }
+        });
+        return;
+      }
+
+      // Get current active sessions for the user
+      const activeSessions = await this.authService.getUserSessions(req.user.id);
+      
+      const response: ApiResponse = {
+        success: true,
+        data: {
+          singleDeviceEnforced: true,
+          activeSessions: activeSessions.length,
+          currentSession: activeSessions.length > 0 ? {
+            deviceInfo: activeSessions[0].deviceInfo,
+            ipAddress: activeSessions[0].ipAddress,
+            userAgent: activeSessions[0].userAgent,
+            loginTime: activeSessions[0].createdAt,
+            expiresAt: activeSessions[0].expiresAt
+          } : null,
+          message: 'Single device login is enforced. Only one device can be logged in at a time.'
+        },
+        message: 'Session status retrieved successfully'
+      };
+
+      res.json(response);
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: {
+          message: error instanceof Error ? error.message : 'Failed to retrieve session status',
           statusCode: 500
         }
       });
@@ -499,21 +877,41 @@ export class AuthController {
         return;
       }
 
-      // Only allow admin users to view all login logs
-      if (req.user.role !== 'ADMIN' && req.user.role !== 'SUPER_ADMIN') {
-        res.status(403).json({
-          success: false,
-          error: { message: 'Access denied. Admin privileges required.', statusCode: 403 }
-        });
-        return;
-      }
-
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 50;
       const skip = (page - 1) * limit;
+      const userId = req.query.userId as string;
+
+      // Build where clause based on user role
+      let whereClause: any = {};
+      
+      // If not admin, only show logs for current user
+      if (req.user.role !== 'ADMIN') {
+        whereClause.userId = req.user.id;
+      } else if (req.user.role === 'ADMIN') {
+        // Additional check for admin role - only authorized admin emails can access admin features
+        const adminEmails = ['webnox@admin.com', 'webnox1@admin.com'];
+        if (!adminEmails.includes(req.user.email)) {
+          res.status(403).json({
+            success: false,
+            error: { 
+              message: 'Access denied. Admin access is restricted to authorized personnel only.', 
+              statusCode: 403,
+              code: 'ADMIN_ACCESS_DENIED'
+            }
+          });
+          return;
+        }
+        
+        if (userId) {
+          // Admin can filter by specific user
+          whereClause.userId = userId;
+        }
+      }
 
       const [logs, total] = await Promise.all([
         prisma.loginLog.findMany({
+          where: whereClause,
           skip,
           take: limit,
           orderBy: { createdAt: 'desc' },
@@ -528,19 +926,29 @@ export class AuthController {
             }
           }
         }),
-        prisma.loginLog.count()
+        prisma.loginLog.count({ where: whereClause })
       ]);
+
+      // Add single device enforcement info to logs
+      const enhancedLogs = logs.map(log => ({
+        ...log,
+        singleDeviceEnforced: true,
+        isLoginAttempt: log.reason?.includes('login') || log.reason?.includes('logout'),
+        isSingleDeviceBlock: log.reason?.includes('already logged in on another device')
+      }));
 
       const response: ApiResponse = {
         success: true,
         data: {
-          logs,
+          logs: enhancedLogs,
           pagination: {
             page,
             limit,
             total,
             totalPages: Math.ceil(total / limit)
-          }
+          },
+          singleDeviceEnforced: true,
+          message: 'Single device login is enforced. Only one device can be logged in at a time.'
         },
         message: 'Login logs retrieved successfully'
       };
@@ -551,6 +959,80 @@ export class AuthController {
         success: false,
         error: {
           message: error instanceof Error ? error.message : 'Failed to retrieve login logs',
+          statusCode: 500
+        }
+      });
+    }
+  }
+
+  @Post('/force-logout/:userId')
+  @Use(authenticate)
+  async forceLogoutUser(req: Request, res: Response): Promise<void> {
+    try {
+      if (!req.user) {
+        res.status(401).json({
+          success: false,
+          error: { message: 'Authentication required', statusCode: 401 }
+        });
+        return;
+      }
+
+      // Only allow admin users to force logout - and only the specific admin
+      if (req.user.role !== 'ADMIN') {
+        res.status(403).json({
+          success: false,
+          error: { message: 'Access denied. Admin privileges required.', statusCode: 403 }
+        });
+        return;
+      }
+
+      // Additional check for admin role - only authorized admin emails can access admin features
+      const adminEmails = ['webnox@admin.com', 'webnox1@admin.com'];
+      if (req.user.role === 'ADMIN' && !adminEmails.includes(req.user.email)) {
+        res.status(403).json({
+          success: false,
+          error: { 
+            message: 'Access denied. Admin access is restricted to authorized personnel only.', 
+            statusCode: 403,
+            code: 'ADMIN_ACCESS_DENIED'
+          }
+        });
+        return;
+      }
+
+      const { userId } = req.params;
+      const { reason } = req.body;
+
+      if (!userId) {
+        res.status(400).json({
+          success: false,
+          error: { message: 'User ID is required', statusCode: 400 }
+        });
+        return;
+      }
+
+      // Force logout the user
+      await this.authService.forceLogoutUser(
+        userId, 
+        req.user.id, 
+        reason || 'Admin forced logout'
+      );
+
+      const response: ApiResponse = {
+        success: true,
+        message: 'User has been force logged out from all devices successfully',
+        data: {
+          singleDeviceEnforced: true,
+          message: 'Single device login is enforced. Only one device can be logged in at a time.'
+        }
+      };
+
+      res.json(response);
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: {
+          message: error instanceof Error ? error.message : 'Failed to force logout user',
           statusCode: 500
         }
       });

@@ -23,6 +23,7 @@ import { AdsController } from './modules/controllers/ads.controller';
 import { UserService } from './modules/services/user.service';
 import { EmailService } from './modules/services/email.service';
 import { AuthService } from './modules/services/auth.service';
+import { startCleanupScheduler } from './utils/cleanup';
 
 class Server {
   private app: express.Application;
@@ -130,6 +131,9 @@ class Server {
       console.log(`📊 Environment: ${config.nodeEnv}`);
       console.log(`🔗 Health check: http://localhost:${this.port}/health`);
       console.log(`📖 API Documentation: http://localhost:${this.port}/api`);
+      
+      // Start cleanup scheduler
+      startCleanupScheduler();
     });
   }
 }

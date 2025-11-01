@@ -6,44 +6,50 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🌱 Starting Cyberix Security Admin database seeding...');
 
-  // Create super admin user
-  const superAdminPassword = await bcrypt.hash('superadmin123', 12);
-  const superAdmin = await prisma.user.upsert({
-    where: { email: 'superadmin@cyberix.com' },
-    update: {},
-    create: {
-      email: 'superadmin@cyberix.com',
-      username: 'superadmin',
-      password: superAdminPassword,
-      firstName: 'Super',
-      lastName: 'Admin',
-      role: UserRole.SUPER_ADMIN,
-      status: UserStatus.ACTIVE,
-      emailVerified: true,
-      twoFactorEnabled: true
-    }
-  });
+  // Note: Only USER and ADMIN roles are allowed
+  // SUPER_ADMIN role has been removed for security
 
-  console.log('✅ Super Admin user created:', { id: superAdmin.id, email: superAdmin.email });
-
-  // Create admin user
-  const adminPassword = await bcrypt.hash('admin123', 12);
+  // Create admin users
+  const adminPassword = await bcrypt.hash('12345', 12);
+  
+  // First admin user - webnox@admin.com
   const admin = await prisma.user.upsert({
-    where: { email: 'admin@cyberix.com' },
+    where: { email: 'webnox@admin.com' },
     update: {},
     create: {
-      email: 'admin@cyberix.com',
-      username: 'admin',
+      email: 'webnox@admin.com',
+      username: 'webnox_admin',
       password: adminPassword,
-      firstName: 'Admin',
-      lastName: 'User',
+      firstName: 'Webnox',
+      lastName: 'Admin',
       role: UserRole.ADMIN,
       status: UserStatus.ACTIVE,
-      emailVerified: true
+      emailVerified: true,
+      twoFactorEnabled: false
     }
   });
 
-  console.log('✅ Admin user created:', { id: admin.id, email: admin.email });
+  // Second admin user - webnox1@admin.com
+  const admin2 = await prisma.user.upsert({
+    where: { email: 'webnox1@admin.com' },
+    update: {},
+    create: {
+      email: 'webnox1@admin.com',
+      username: 'webnox1_admin',
+      password: adminPassword,
+      firstName: 'Webnox',
+      lastName: 'Admin 2',
+      role: UserRole.ADMIN,
+      status: UserStatus.ACTIVE,
+      emailVerified: true,
+      twoFactorEnabled: false
+    }
+  });
+
+  console.log('✅ Admin users created:', [
+    { id: admin.id, email: admin.email, password: '12345' },
+    { id: admin2.id, email: admin2.email, password: '12345' }
+  ]);
 
   // Create test users
   const users = await Promise.all([
@@ -70,7 +76,7 @@ async function main() {
         password: await bcrypt.hash('user123', 12),
         firstName: 'Jane',
         lastName: 'Smith',
-        role: UserRole.CUSTOMER,
+        role: UserRole.USER, // Changed from CUSTOMER to USER
         status: UserStatus.ACTIVE,
         emailVerified: true
       }
@@ -407,7 +413,7 @@ async function main() {
   const auditLogs = await Promise.all([
     prisma.auditLog.create({
       data: {
-        userId: superAdmin.id,
+        userId: admin.id, // Use admin instead of superAdmin
         action: 'CREATE_USER',
         resource: 'User',
         details: {

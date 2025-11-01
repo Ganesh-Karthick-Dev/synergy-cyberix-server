@@ -15,7 +15,7 @@ datasource db {
 model User {
   id                String   @id @default(cuid())
   email             String   @unique
-  username          String   @unique
+  username          String?  @unique
   password          String
   firstName         String?
   lastName          String?
@@ -72,6 +72,21 @@ model LoginLog {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("login_logs")
+}
+
+model LoginBlock {
+  id        String   @id @default(cuid())
+  email     String
+  ipAddress String?
+  attempts  Int      @default(1)
+  blockedAt DateTime @default(now())
+  expiresAt DateTime
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([email])
+  @@map("login_blocks")
 }
 
 // ==================== SERVICE PLANS ====================
@@ -279,11 +294,8 @@ model DashboardMetric {
 // ==================== ENUMS ====================
 
 enum UserRole {
-  SUPER_ADMIN
   ADMIN
-  MODERATOR
   USER
-  CUSTOMER
 }
 
 enum UserStatus {
