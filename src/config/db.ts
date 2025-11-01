@@ -11,6 +11,7 @@ const prisma = globalThis.__prisma || new PrismaClient({
   errorFormat: 'pretty',
 });
 
+
 // Save the instance to global to prevent multiple instances
 globalThis.__prisma = prisma;
 
