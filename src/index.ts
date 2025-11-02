@@ -45,12 +45,13 @@ class Server {
     // Security middleware
     this.app.use(helmet());
     
-    // CORS configuration
+    // CORS configuration - allow all origins for simplicity
     this.app.use(cors({
-      origin: config.cors.origin,
-      credentials: true,
+      origin: true, // Allow all origins
+      credentials: true, // Required for cookies
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+      allowedHeaders: ['Content-Type', 'X-Requested-With'],
+      exposedHeaders: ['Set-Cookie']
     }));
 
     // Rate limiting
@@ -90,7 +91,7 @@ class Server {
     this.app.use(compression());
 
     // Logging middleware
-    this.app.use(morgan('combined'));
+      this.app.use(morgan('combined'));
   }
 
   private initializeRoutes(): void {

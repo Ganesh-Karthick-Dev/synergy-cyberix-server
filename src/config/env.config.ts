@@ -8,7 +8,6 @@ interface Config {
   port: number;
   nodeEnv: string;
   security: {
-    singleDeviceLogin: boolean;
     loginBlocking: boolean;
     emailNotifications: boolean;
     adminAccessControl: boolean;
@@ -51,10 +50,9 @@ interface Config {
 }
 
 const config: Config = {
-  port: parseInt(process.env.PORT || '9000', 10),
+  port: parseInt(process.env.PORT || '8000', 10),
   nodeEnv: process.env.NODE_ENV || 'production',
   security: {
-    singleDeviceLogin: process.env.SINGLE_DEVICE_LOGIN !== 'false',
     loginBlocking: process.env.LOGIN_BLOCKING !== 'false',
     emailNotifications: process.env.EMAIL_NOTIFICATIONS !== 'false',
     adminAccessControl: process.env.ADMIN_ACCESS_CONTROL !== 'false'

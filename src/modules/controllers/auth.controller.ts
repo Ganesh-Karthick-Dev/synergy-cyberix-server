@@ -11,6 +11,7 @@ import { authenticate } from '../../middlewares/auth.middleware';
 import { prisma } from '../../config/db';
 import { Use } from '../../decorators/middleware.decorator';
 import { config } from '../../config/env.config';
+import { CustomError } from '../../middlewares/error.middleware';
 import passport from 'passport';
 
 @Service()
@@ -36,249 +37,168 @@ export class AuthController {
       const { email, password, deviceInfo } = req.body;
 
       console.log('req.body', req.body);
-      
-      // Check if user is blocked due to failed attempts (only in production mode)
-      if (config.security.loginBlocking) {
-        const blockStatus = await this.authService.isUserBlocked(email);
-        if (blockStatus.isBlocked) {
-          res.status(423).json({
-            success: false,
-            error: { 
-              message: `Account temporarily blocked due to multiple failed login attempts. Please try again in ${blockStatus.remainingMinutes} minutes.`, 
-              statusCode: 423,
-              code: 'ACCOUNT_BLOCKED',
-              details: {
-                attempts: blockStatus.attempts,
-                blockedAt: blockStatus.blockedAt,
-                expiresAt: blockStatus.expiresAt,
-                remainingMinutes: blockStatus.remainingMinutes
-              }
-            }
-          });
-          return;
-        }
-      }
-      
-      const user = await this.userService.validateCredentials({ email, password });
-      if (!user) {
-        // Record failed login attempt and check for blocking (only in production mode)
-        if (config.security.loginBlocking) {
-          const blockResult = await this.authService.recordFailedLoginAttempt(
-            email,
-            req.ip,
-            req.get('User-Agent'),
-            'Invalid credentials'
-          );
 
-          // Log failed login attempt
-          await this.authService.logLoginAttempt(
-            '', // No userId for failed attempts
-            email,
-            false,
-            req.ip,
-            req.get('User-Agent'),
-            `Invalid credentials. Attempt ${blockResult.attempts}/3`
-          );
-          
-          if (blockResult.isBlocked) {
-            res.status(423).json({
-              success: false,
-              error: { 
-                message: `Account blocked after 3 failed attempts. Please try again in ${blockResult.remainingMinutes} minutes.`, 
-                statusCode: 423,
-                code: 'ACCOUNT_BLOCKED',
-                details: {
-                  attempts: blockResult.attempts,
-                  remainingMinutes: blockResult.remainingMinutes
-                }
-              }
-            });
-          } else {
-            res.status(401).json({
-              success: false,
-              error: { 
-                message: `Invalid credentials. ${3 - blockResult.attempts} attempts remaining.`, 
-                statusCode: 401,
-                code: 'INVALID_CREDENTIALS',
-                details: {
-                  attempts: blockResult.attempts,
-                  remainingAttempts: 3 - blockResult.attempts
-                }
-              }
-            });
-          }
-        } else {
-          // Simple error response
-          res.status(401).json({
-            success: false,
-            error: { 
-              message: 'Invalid credentials', 
-              statusCode: 401,
-              code: 'INVALID_CREDENTIALS'
-            }
-          });
-        }
-        return;
-      }
-
-      // SECURITY: Double-check admin access - only authorized admin emails can be admin
-      const adminEmails = ['webnox@admin.com', 'webnox1@admin.com'];
-      if (user.role === 'ADMIN' && !adminEmails.includes(email)) {
-        // Log failed admin login attempt
-        await this.authService.logLoginAttempt(
-          user.id,
-          email,
-          false,
-          req.ip,
-          req.get('User-Agent'),
-          'SECURITY ALERT: Unauthorized admin login attempt - only authorized admin emails can login as admin'
-        );
-
-        // Send admin security alert for unauthorized admin access (only in production mode)
-        if (config.security.emailNotifications) {
-          try {
-            const { EmailService } = await import('../services/email.service');
-            const emailService = new EmailService();
-            
-            await emailService.sendAdminSecurityAlert('webnox@admin.com', {
-              type: 'UNAUTHORIZED_ADMIN_ACCESS',
-              userEmail: email,
-              attempts: 1,
-              ipAddress: req.ip,
-              userAgent: req.get('User-Agent'),
-              timestamp: new Date()
-            });
-          } catch (emailError) {
-            console.error('Failed to send admin security alert:', emailError);
-          }
-        }
-        
-        res.status(403).json({
+    // Check if user is blocked due to failed attempts (only in production mode)
+    if (config.security.loginBlocking) {
+      const blockStatus = await this.authService.isUserBlocked(email);
+      if (blockStatus.isBlocked) {
+        res.status(423).json({
           success: false,
-          error: { 
-            message: 'Access denied. Admin login is restricted to authorized personnel only.', 
-            statusCode: 403,
-            code: 'ADMIN_ACCESS_DENIED'
+          error: {
+            message: `Account temporarily blocked due to multiple failed login attempts. Please try again in ${blockStatus.remainingMinutes} minutes.`,
+            statusCode: 423,
+            code: 'ACCOUNT_BLOCKED',
+            details: {
+              attempts: blockStatus.attempts,
+              blockedAt: blockStatus.blockedAt,
+              expiresAt: blockStatus.expiresAt,
+              remainingMinutes: blockStatus.remainingMinutes
+            }
           }
         });
         return;
       }
+    }
 
-      // Check if user already has an active session (Single Device Login Enforcement)
-      // Only enforce in production mode or when explicitly enabled
-      if (config.security.singleDeviceLogin) {
-        const existingSessions = await this.authService.getUserSessions(user.id);
-        if (existingSessions.length > 0) {
-          // Get details of the existing session for better logging
-          const existingSession = existingSessions[0];
-          
-          // Log failed login attempt due to existing session with detailed info
-          await this.authService.logLoginAttempt(
-            user.id,
-            email,
-            false,
-            req.ip,
-            req.get('User-Agent'),
-            `User already logged in on another device. Existing session: ${existingSession.deviceInfo || 'Unknown Device'} (IP: ${existingSession.ipAddress || 'Unknown'})`
-          );
-          
-          res.status(409).json({
-            success: false,
-            error: { 
-              message: 'This account is already logged in on another device. Only one device can be logged in at a time. Please logout from the other device first or contact support if you believe this is an error.', 
-              statusCode: 409,
-              code: 'USER_ALREADY_LOGGED_IN',
-              details: {
-                existingDevice: existingSession.deviceInfo || 'Unknown Device',
-                existingIp: existingSession.ipAddress || 'Unknown',
-                existingLoginTime: existingSession.createdAt
-              }
-            }
-          });
-          return;
-        }
-      }
+    // Validate credentials - this will throw CustomError if invalid
+    const user = await this.userService.validateCredentials({ email, password }, req.ip, req.get('User-Agent'));
 
-      const tokens = this.authService.generateTokens({
-        id: user.id,
-        email: user.email,
-        role: user.role,
-        isActive: user.isActive
-      });
-
-      // Create new session (this will invalidate all previous sessions)
-      await this.authService.createSession(
-        user.id,
-        tokens.accessToken,
-        deviceInfo,
-        req.ip,
-        req.get('User-Agent')
-      );
-
-      // Send login notification to user about new device login
-      try {
-        await this.notificationService.sendLoginNotification({
-          userId: user.id,
-          newDeviceInfo: deviceInfo || 'Unknown Device',
-          newIpAddress: req.ip || 'Unknown IP',
-          newUserAgent: req.get('User-Agent') || 'Unknown User Agent',
-          timestamp: new Date()
-        });
-      } catch (notificationError) {
-        // Log notification error but don't fail the login
-        console.error('Failed to send login notification:', notificationError);
-      }
-
-      // Set cookies for tokens
-      res.cookie('accessToken', tokens.accessToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        maxAge: 15 * 60 * 1000 // 15 minutes
-      });
-
-      res.cookie('refreshToken', tokens.refreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
-      });
-
-      // Clear any existing login block on successful login
-      await this.authService.clearLoginBlock(email);
-
-      // Log successful login attempt
+    // SECURITY: Double-check admin access - only authorized admin emails can be admin
+    const adminEmails = ['webnox@admin.com', 'webnox1@admin.com'];
+    if (user.role === 'ADMIN' && !adminEmails.includes(email)) {
+      // Log failed admin login attempt
       await this.authService.logLoginAttempt(
         user.id,
-        user.email,
-        true,
+        email,
+        false,
         req.ip,
         req.get('User-Agent'),
-        'Login successful'
+        'SECURITY ALERT: Unauthorized admin login attempt - only authorized admin emails can login as admin'
       );
 
-      const response: ApiResponse = {
-        success: true,
-        data: {
-          user: {
-            id: user.id,
-            email: user.email,
-            role: user.role,
-            isActive: user.isActive
-          }
-        },
-        message: 'Login successful. Previous sessions have been invalidated.'
-      };
+      // Send admin security alert for unauthorized admin access (only in production mode)
+      if (config.security.emailNotifications) {
+        try {
+          const { EmailService } = await import('../services/email.service');
+          const emailService = new EmailService();
 
+          await emailService.sendAdminSecurityAlert('webnox@admin.com', {
+            type: 'UNAUTHORIZED_ADMIN_ACCESS',
+            userEmail: email,
+            attempts: 1,
+            ipAddress: req.ip,
+            userAgent: req.get('User-Agent'),
+            timestamp: new Date()
+          });
+        } catch (emailError) {
+          console.error('Failed to send admin security alert:', emailError);
+        }
+      }
+
+      throw new CustomError('Access denied. Admin login is restricted to authorized personnel only.', 403);
+    }
+
+    const tokens = this.authService.generateTokens({
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      isActive: user.isActive
+    });
+
+    // Create new session (multiple devices allowed)
+    await this.authService.createSession(
+      user.id,
+      tokens.accessToken,
+      deviceInfo,
+      req.ip,
+      req.get('User-Agent')
+    );
+
+    // Send login notification to user about new device login
+    try {
+      await this.notificationService.sendLoginNotification({
+        userId: user.id,
+        newDeviceInfo: deviceInfo || 'Unknown Device',
+        newIpAddress: req.ip || 'Unknown IP',
+        newUserAgent: req.get('User-Agent') || 'Unknown User Agent',
+        timestamp: new Date()
+      });
+    } catch (notificationError) {
+      // Log notification error but don't fail the login
+      console.error('Failed to send login notification:', notificationError);
+    }
+
+    // Set cookies for tokens (backend handles ALL cookie management)
+    // Don't set domain - allows cookies to work for same hostname (localhost) with different ports
+    res.cookie('accessToken', tokens.accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax', // Lax for cross-origin in development
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      path: '/', // Ensure cookies are available for all paths
+      // Don't set domain - allow cross-origin
+    });
+    console.log('🟢 [Login] Set accessToken cookie');
+
+    res.cookie('refreshToken', tokens.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax', // Lax for development
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+      path: '/', // Ensure cookies are available for all paths
+      // Don't set domain - browsers will use current hostname
+    });
+    console.log('🟢 [Login] Set refreshToken cookie');
+
+    // Set a non-HttpOnly cookie that JavaScript can read to check auth status
+    res.cookie('isAuthenticated', 'true', {
+      httpOnly: false, // Allow JavaScript to read this
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      path: '/',
+    });
+    console.log('🟢 [Login] Set isAuthenticated cookie');
+
+    // Clear any existing login block on successful login
+    await this.authService.clearLoginBlock(email);
+
+    // Log successful login attempt
+    await this.authService.logLoginAttempt(
+      user.id,
+      user.email,
+      true,
+      req.ip,
+      req.get('User-Agent'),
+      'Login successful'
+    );
+
+    const response: ApiResponse = {
+      success: true,
+      data: {
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          isActive: user.isActive
+        }
+      },
+      message: 'Login successful. Previous sessions have been invalidated.'
+    };
+
+      // Note: Tokens are set as cookies, not included in response body
+      console.log('🟢 [Login] Response sent, cookies should be set in browser');
+      console.log('🟢 [Login] Cookie settings:', {
+        accessToken: 'Set (httpOnly)',
+        refreshToken: 'Set (httpOnly)',
+        sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: '7 days (accessToken), 30 days (refreshToken)',
+      });
       res.json(response);
     } catch (error) {
-      res.status(500).json({
-        success: false,
-        error: {
-          message: error instanceof Error ? error.message : 'Login failed',
-          statusCode: 500
-        }
-      });
+      // Let CustomError bubble up to global error middleware
+      throw error;
     }
   }
 
@@ -312,21 +232,18 @@ export class AuthController {
           true, // Success = true for logout
           req.ip,
           req.get('User-Agent'),
-          'User logout - Single device session ended'
+          'User logout - Session ended'
         );
       }
 
       // Clear cookies
       res.clearCookie('accessToken');
       res.clearCookie('refreshToken');
+      res.clearCookie('isAuthenticated');
 
       const response: ApiResponse = {
         success: true,
-        message: 'Logout successful. You can now login from another device.',
-        data: {
-          singleDeviceEnforced: true,
-          message: 'Single device login is enforced. Only one device can be logged in at a time.'
-        }
+        message: 'Logout successful'
       };
 
       res.json(response);
@@ -356,26 +273,32 @@ export class AuthController {
 
       const tokens = await this.authService.refreshTokens(refreshToken);
 
-      // Set new cookies
+      // Set new cookies (backend handles ALL cookie management)
+      // Don't set domain - allows cookies to work for same hostname (localhost) with different ports
       res.cookie('accessToken', tokens.accessToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        maxAge: 15 * 60 * 1000 // 15 minutes
+        sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        path: '/',
+        // Don't set domain - browsers will use current hostname
       });
 
       res.cookie('refreshToken', tokens.refreshToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+        sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+        path: '/',
+        // Don't set domain - browsers will use current hostname
       });
 
       const response: ApiResponse = {
         success: true,
-        message: 'Tokens refreshed successfully'
+        message: 'Tokens refreshed successfully. New cookies have been set.'
       };
-
+      
+      // Note: Tokens are set as cookies, not included in response body
       res.json(response);
     } catch (error) {
       res.status(401).json({
@@ -756,14 +679,13 @@ export class AuthController {
       // Clear current session cookies
       res.clearCookie('accessToken');
       res.clearCookie('refreshToken');
+      res.clearCookie('isAuthenticated');
 
       const response: ApiResponse = {
         success: true,
-        message: 'Logged out from all devices successfully. You can now login from any device.',
+        message: 'Logged out from all devices successfully',
         data: {
-          singleDeviceEnforced: true,
-          previousSessionsCount: currentSessions.length,
-          message: 'Single device login is enforced. Only one device can be logged in at a time.'
+          previousSessionsCount: currentSessions.length
         }
       };
 
@@ -840,16 +762,14 @@ export class AuthController {
       const response: ApiResponse = {
         success: true,
         data: {
-          singleDeviceEnforced: true,
           activeSessions: activeSessions.length,
-          currentSession: activeSessions.length > 0 ? {
-            deviceInfo: activeSessions[0].deviceInfo,
-            ipAddress: activeSessions[0].ipAddress,
-            userAgent: activeSessions[0].userAgent,
-            loginTime: activeSessions[0].createdAt,
-            expiresAt: activeSessions[0].expiresAt
-          } : null,
-          message: 'Single device login is enforced. Only one device can be logged in at a time.'
+          sessions: activeSessions.map(session => ({
+            deviceInfo: session.deviceInfo,
+            ipAddress: session.ipAddress,
+            userAgent: session.userAgent,
+            loginTime: session.createdAt,
+            expiresAt: session.expiresAt
+          }))
         },
         message: 'Session status retrieved successfully'
       };
@@ -930,12 +850,9 @@ export class AuthController {
         prisma.loginLog.count({ where: whereClause })
       ]);
 
-      // Add single device enforcement info to logs
       const enhancedLogs = logs.map(log => ({
         ...log,
-        singleDeviceEnforced: true,
-        isLoginAttempt: log.reason?.includes('login') || log.reason?.includes('logout'),
-        isSingleDeviceBlock: log.reason?.includes('already logged in on another device')
+        isLoginAttempt: log.reason?.includes('login') || log.reason?.includes('logout')
       }));
 
       const response: ApiResponse = {
@@ -947,9 +864,7 @@ export class AuthController {
             limit,
             total,
             totalPages: Math.ceil(total / limit)
-          },
-          singleDeviceEnforced: true,
-          message: 'Single device login is enforced. Only one device can be logged in at a time.'
+          }
         },
         message: 'Login logs retrieved successfully'
       };
@@ -1019,14 +934,10 @@ export class AuthController {
         reason || 'Admin forced logout'
       );
 
-      const response: ApiResponse = {
-        success: true,
-        message: 'User has been force logged out from all devices successfully',
-        data: {
-          singleDeviceEnforced: true,
-          message: 'Single device login is enforced. Only one device can be logged in at a time.'
-        }
-      };
+        const response: ApiResponse = {
+          success: true,
+          message: 'User has been force logged out from all devices successfully'
+        };
 
       res.json(response);
     } catch (error) {
@@ -1151,35 +1062,8 @@ export class AuthController {
 
       try {
         console.log('🟡 [Backend Callback] Processing successful authentication for user:', user.email);
-        console.log('🟡 [Backend Callback] Single device login enabled:', config.security.singleDeviceLogin);
         
-        // Check if user already has an active session (Single Device Login Enforcement)
-        if (config.security.singleDeviceLogin) {
-          console.log('🟡 [Backend Callback] Checking for existing sessions...');
-          const existingSessions = await this.authService.getUserSessions(user.id);
-          console.log('🟡 [Backend Callback] Existing sessions count:', existingSessions.length);
-          
-          if (existingSessions.length > 0) {
-            const existingSession = existingSessions[0];
-            console.log('🟡 [Backend Callback] User already has active session:', {
-              deviceInfo: existingSession.deviceInfo,
-              ipAddress: existingSession.ipAddress,
-            });
-            
-            await this.authService.logLoginAttempt(
-              user.id,
-              user.email,
-              false,
-              req.ip || '',
-              req.get('User-Agent') || '',
-              `User already logged in on another device. Existing session: ${existingSession.deviceInfo || 'Unknown Device'} (IP: ${existingSession.ipAddress || 'Unknown'})`
-            );
-            
-            const errorUrl = `${config.frontendUrl}/signin?error=${encodeURIComponent('This account is already logged in on another device. Please logout from the other device first.')}`;
-            console.log('🟡 [Backend Callback] Redirecting to:', errorUrl);
-            return res.redirect(errorUrl);
-          }
-        }
+        // For OAuth logins, we allow multiple sessions (multiple devices allowed)
 
         // Generate tokens
         const deviceInfo = {
@@ -1235,28 +1119,68 @@ export class AuthController {
           req.get('User-Agent') || ''
         );
 
-        // Set cookies
+        // Set cookies with proper settings for cross-origin
+        // Don't set domain - allows cookies to work for same hostname (localhost) with different ports
         console.log('🟡 [Backend Callback] Setting cookies...');
-        res.cookie('accessToken', tokens.accessToken, {
+        console.log('🟡 [Backend Callback] Cookie settings:', {
           httpOnly: true,
           secure: process.env.NODE_ENV === 'production',
-          sameSite: 'lax',
-          maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+          sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+          maxAge: '7 days (accessToken)',
+          path: '/',
+          domain: 'NOT SET (uses current hostname)',
         });
-        console.log('🟡 [Backend Callback] accessToken cookie set');
+        
+        const cookieOptions = {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: (process.env.NODE_ENV === 'production' ? 'strict' : 'lax') as 'strict' | 'lax',
+          maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+          path: '/',
+        };
+        
+        res.cookie('accessToken', tokens.accessToken, cookieOptions);
+        console.log('🟡 [Backend Callback] accessToken cookie set:', {
+          tokenLength: tokens.accessToken.length,
+          tokenPreview: tokens.accessToken.substring(0, 20) + '...',
+          cookieOptions,
+        });
 
         if (tokens.refreshToken) {
-          res.cookie('refreshToken', tokens.refreshToken, {
+          const refreshCookieOptions = {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
-            sameSite: 'lax',
-            maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+            sameSite: (process.env.NODE_ENV === 'production' ? 'strict' : 'lax') as 'strict' | 'lax',
+            maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+            path: '/',
+          };
+          res.cookie('refreshToken', tokens.refreshToken, refreshCookieOptions);
+          console.log('🟡 [Backend Callback] refreshToken cookie set:', {
+            tokenLength: tokens.refreshToken.length,
+            tokenPreview: tokens.refreshToken.substring(0, 20) + '...',
+            cookieOptions: refreshCookieOptions,
           });
-          console.log('🟡 [Backend Callback] refreshToken cookie set');
         }
 
-        // Get redirect URL from session or default to dashboard
-        const redirectUrl = (req.session as any)?.redirectUrl || '/dashboard';
+        // Set a non-HttpOnly cookie that JavaScript can read to check auth status
+        res.cookie('isAuthenticated', 'true', {
+          httpOnly: false, // Allow JavaScript to read this
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+          maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+          path: '/',
+        });
+        console.log('🟡 [Backend Callback] isAuthenticated cookie set');
+        
+        // Log what cookies are being sent in the response
+        const responseCookies = res.getHeaders()['set-cookie'] || [];
+        console.log('🟡 [Backend Callback] Response Set-Cookie headers:', {
+          count: Array.isArray(responseCookies) ? responseCookies.length : 1,
+          headers: responseCookies,
+        });
+
+        // Get redirect URL from session or default to root
+        const redirectUrl = (req.session as any)?.redirectUrl || '/';
         delete (req.session as any)?.redirectUrl;
         console.log('🟡 [Backend Callback] Redirect URL from session:', redirectUrl);
         console.log('🟡 [Backend Callback] Frontend URL:', config.frontendUrl);
@@ -1265,6 +1189,7 @@ export class AuthController {
         console.log('🟡 [Backend Callback] Final redirect URL:', finalRedirectUrl);
         console.log('🟡 [Backend Callback] Redirecting to frontend...');
 
+        // Note: Cookies are already set above, redirect will send cookies to browser
         // Redirect to frontend with success
         return res.redirect(finalRedirectUrl);
       } catch (error: any) {

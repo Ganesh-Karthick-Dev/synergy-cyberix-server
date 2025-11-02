@@ -102,8 +102,7 @@ export class AuthService {
   }
 
   /**
-   * Create a new session for a user, invalidating all previous sessions
-   * This ensures only one active session per user
+   * Create a new session for a user (multiple devices allowed)
    */
   async createSession(
     userId: string, 
@@ -113,12 +112,7 @@ export class AuthService {
     userAgent?: string
   ): Promise<void> {
     try {
-      // Delete all existing sessions for this user to enforce single session
-      await prisma.session.deleteMany({
-        where: { userId }
-      });
-
-      // Create new session
+      // Create new session (multiple sessions allowed)
       await prisma.session.create({
         data: {
           userId,
@@ -198,33 +192,6 @@ export class AuthService {
       });
     } catch (error) {
       throw new CustomError('Failed to get user sessions', 500);
-    }
-  }
-
-  /**
-   * Check if user can login (single device enforcement)
-   */
-  async canUserLogin(userId: string): Promise<{
-    canLogin: boolean;
-    reason?: string;
-    existingSession?: any;
-  }> {
-    try {
-      const existingSessions = await this.getUserSessions(userId);
-      
-      if (existingSessions.length > 0) {
-        return {
-          canLogin: false,
-          reason: 'User already logged in on another device',
-          existingSession: existingSessions[0]
-        };
-      }
-      
-      return {
-        canLogin: true
-      };
-    } catch (error) {
-      throw new CustomError('Failed to check login eligibility', 500);
     }
   }
 

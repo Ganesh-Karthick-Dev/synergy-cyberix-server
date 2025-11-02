@@ -19,16 +19,53 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
   // Check for access token in cookies first
   const accessToken = req.cookies.accessToken;
   
+  // Debug logging - very detailed
+  console.log('🔐 [Auth Middleware] ===== AUTHENTICATION CHECK START =====');
+  console.log('🔐 [Auth Middleware] Request details:', {
+    url: req.url,
+    method: req.method,
+    origin: req.get('origin'),
+    referer: req.get('referer'),
+    host: req.get('host'),
+  });
+  
+  console.log('🔐 [Auth Middleware] All cookies received:', {
+    cookieCount: Object.keys(req.cookies).length,
+    cookieNames: Object.keys(req.cookies),
+    hasAccessToken: !!accessToken,
+    hasRefreshToken: !!req.cookies.refreshToken,
+    accessTokenLength: accessToken?.length || 0,
+    refreshTokenLength: req.cookies.refreshToken?.length || 0,
+    accessTokenPreview: accessToken ? accessToken.substring(0, 30) + '...' : 'MISSING',
+  });
+  
+  // Also check raw cookie header
+  const rawCookieHeader = req.get('cookie');
+  console.log('🔐 [Auth Middleware] Raw Cookie header:', {
+    present: !!rawCookieHeader,
+    headerValue: rawCookieHeader ? rawCookieHeader.substring(0, 200) : 'MISSING',
+  });
+  
   if (!accessToken) {
+    console.log('❌ [Auth Middleware] ===== AUTHENTICATION FAILED: No accessToken cookie =====');
+    console.log('❌ [Auth Middleware] Available cookies:', Object.keys(req.cookies));
     return next(new CustomError('Authentication required', 401));
   }
 
   try {
     // Validate session exists and is active
     const authService = new AuthService();
+    console.log('🔐 [Auth Middleware] Validating session with token...');
     const isSessionValid = await authService.validateSession(accessToken);
     
+    console.log('🔐 [Auth Middleware] Session validation result:', {
+      isSessionValid,
+      accessTokenLength: accessToken?.length || 0,
+      tokenPreview: accessToken.substring(0, 30) + '...',
+    });
+    
     if (!isSessionValid) {
+      console.log('❌ [Auth Middleware] ===== AUTHENTICATION FAILED: Session invalid/expired =====');
       return next(new CustomError('Session expired or invalid. Please login again.', 401));
     }
 
@@ -41,9 +78,17 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
       }
 
       if (!user) {
+        console.log('❌ [Auth Middleware] ===== AUTHENTICATION FAILED: Passport returned no user =====');
         return next(new CustomError('Authentication required', 401));
       }
 
+      console.log('✅ [Auth Middleware] ===== AUTHENTICATION SUCCESS =====');
+      console.log('✅ [Auth Middleware] Authenticated user:', {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        isActive: user.isActive,
+      });
       req.user = user;
       next();
     })(req, res, next);

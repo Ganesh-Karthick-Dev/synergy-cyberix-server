@@ -18,7 +18,7 @@ export class AdsController {
   async getAllAds(req: Request, res: Response): Promise<void> {
     try {
       const { search, status, priority } = req.query;
-
+      
       const ads = await this.adsService.getAllAds({
         search: search as string | undefined,
         status: status as string | undefined,
