@@ -85,7 +85,7 @@ export class PlanService {
     price: number;
     description: string;
     features: string[] | Record<string, any>;
-    deliveryDays: number;
+    deliveryDays?: number;
     isPopular?: boolean;
     isActive?: boolean;
     currency?: string;

@@ -97,19 +97,17 @@ export class PlanController {
     body('name').notEmpty().withMessage('Plan name is required'),
     body('price').isNumeric().withMessage('Price must be a number'),
     body('description').notEmpty().withMessage('Description is required'),
-    body('features').notEmpty().withMessage('Features are required'),
-    body('deliveryDays').isNumeric().withMessage('Delivery days must be a number')
+    body('features').isArray({ min: 1 }).withMessage('At least one feature is required')
   ])
   async createPlan(req: Request, res: Response): Promise<void> {
     try {
-      const { name, price, description, features, deliveryDays, isPopular = false, isActive = true } = req.body;
+      const { name, price, description, features, isPopular = false, isActive = true } = req.body;
 
       const plan = await this.planService.createPlan({
         name,
         price: Number(price),
         description,
         features,
-        deliveryDays: Number(deliveryDays),
         isPopular,
         isActive,
       });

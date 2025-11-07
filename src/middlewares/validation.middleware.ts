@@ -14,7 +14,8 @@ export const validate = (validations: ValidationChain[]) => {
         value: error.type === 'field' ? (error as any).value : undefined
       }));
 
-      return next(new CustomError('Validation failed', 400));
+      // Pass detailed validation errors
+      return next(new CustomError('Validation failed', 400, errorMessages));
     }
 
     next();

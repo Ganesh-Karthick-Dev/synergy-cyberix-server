@@ -2,6 +2,7 @@ import passport from 'passport';
 import { Strategy as JwtStrategy, ExtractJwt } from 'passport-jwt';
 import { Strategy as LocalStrategy } from 'passport-local';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
+import { Strategy as GitHubStrategy } from 'passport-github2';
 import { config } from './env.config';
 import { prisma } from './db';
 import bcrypt from 'bcryptjs';
@@ -306,6 +307,59 @@ if (config.google) {
   console.log('✅ Google OAuth website strategy registered successfully');
 } else {
   console.warn('⚠️  Google OAuth not configured - strategy will not be available');
+}
+
+// GitHub OAuth Strategy
+if (config.github) {
+  console.log('📝 Registering GitHub OAuth strategy...');
+  console.log('📝 [Passport GitHub] Callback URL:', config.github.callbackURL);
+  passport.use('github', new GitHubStrategy({
+    clientID: config.github.clientId,
+    clientSecret: config.github.clientSecret,
+    callbackURL: config.github.callbackURL,
+    scope: ['user:email', 'read:org', 'repo'],
+  }, async (accessToken: string, refreshToken: string, profile: any, done: any) => {
+    console.log('🟣 [Passport GitHub Strategy] GitHub OAuth callback received');
+    console.log('🟣 [Passport GitHub Strategy] Profile:', {
+      id: profile.id,
+      username: profile.username,
+      displayName: profile.displayName,
+      emails: profile.emails?.map((e: any) => e.value),
+      photos: profile.photos?.map((p: any) => p.value),
+    });
+    try {
+      const { id, username, displayName, emails, photos } = profile;
+      const email = emails?.[0]?.value?.toLowerCase();
+      
+      if (!email) {
+        console.error('🟣 [Passport GitHub Strategy] No email found in GitHub profile');
+        return done(new Error('No email found in GitHub profile'), false);
+      }
+
+      // Return user with access token for GitHub API access
+      const userPayload = {
+        id: id.toString(),
+        username: username,
+        email: email,
+        displayName: displayName || username,
+        avatar: photos?.[0]?.value || null,
+        accessToken: accessToken, // Include access token for GitHub API calls
+      };
+
+      console.log('🟣 [Passport GitHub Strategy] Returning user payload with access token');
+      return done(null, userPayload as any);
+    } catch (error: any) {
+      console.error('🟣 [Passport GitHub Strategy] Error:', {
+        message: error?.message,
+        stack: error?.stack,
+        name: error?.name,
+      });
+      return done(error, false);
+    }
+  }));
+  console.log('✅ GitHub OAuth strategy registered successfully');
+} else {
+  console.warn('⚠️  GitHub OAuth not configured - strategy will not be available');
 }
 
 // Serialize user for session

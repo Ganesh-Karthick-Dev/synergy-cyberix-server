@@ -9,11 +9,13 @@ export interface AppError extends Error {
 export class CustomError extends Error implements AppError {
   public statusCode: number;
   public isOperational: boolean;
+  public validationErrors?: any[];
 
-  constructor(message: string, statusCode: number = 500, isOperational: boolean = true) {
+  constructor(message: string, statusCode: number = 500, validationErrors?: any[], isOperational: boolean = true) {
     super(message);
     this.statusCode = statusCode;
     this.isOperational = isOperational;
+    this.validationErrors = validationErrors;
 
     Error.captureStackTrace(this, this.constructor);
   }
@@ -65,11 +67,18 @@ export const errorHandler = (
     message = 'Something went wrong!';
   }
 
-  res.status(statusCode).json({
+  const errorResponse: any = {
     success: false,
     error: {
       message,
       statusCode
     }
-  });
+  };
+
+  // Include validation errors if they exist
+  if ((error as CustomError).validationErrors) {
+    errorResponse.error.details = (error as CustomError).validationErrors;
+  }
+
+  res.status(statusCode).json(errorResponse);
 };

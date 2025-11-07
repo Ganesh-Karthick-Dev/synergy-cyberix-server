@@ -46,6 +46,11 @@ interface Config {
     clientSecret: string;
     callbackURL: string;
   };
+  github?: {
+    clientId: string;
+    clientSecret: string;
+    callbackURL: string;
+  };
   frontendUrl: string;
 }
 
@@ -139,6 +144,30 @@ if (googleClientId && googleClientSecret && googleClientId.length > 0 && googleC
   console.warn('⚠️  Google OAuth not configured.');
   console.warn('   GOOGLE_CLIENT_ID:', googleClientId ? `${googleClientId.substring(0, 20)}...` : 'not set');
   console.warn('   GOOGLE_CLIENT_SECRET:', googleClientSecret ? 'set' : 'not set');
+}
+
+// Add GitHub OAuth configuration if provided
+const githubClientId = process.env.GITHUB_CLIENT_ID?.trim();
+const githubClientSecret = process.env.GITHUB_CLIENT_SECRET?.trim();
+
+if (githubClientId && githubClientSecret && githubClientId.length > 0 && githubClientSecret.length > 0) {
+  const backendUrl = process.env.BACKEND_URL || `http://localhost:${config.port}`;
+  const callbackUrl = process.env.GITHUB_CALLBACK_URL?.trim() || `${backendUrl}/api/github/callback`;
+  
+  config.github = {
+    clientId: githubClientId,
+    clientSecret: githubClientSecret,
+    callbackURL: callbackUrl
+  };
+  
+  // Log configuration status (only client ID prefix for security)
+  console.log('✅ GitHub OAuth configured');
+  console.log('   Callback URL:', callbackUrl);
+} else {
+  // Log missing configuration
+  console.warn('⚠️  GitHub OAuth not configured.');
+  console.warn('   GITHUB_CLIENT_ID:', githubClientId ? `${githubClientId.substring(0, 20)}...` : 'not set');
+  console.warn('   GITHUB_CLIENT_SECRET:', githubClientSecret ? 'set' : 'not set');
 }
 
 export { config };
