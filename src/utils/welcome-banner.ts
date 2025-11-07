@@ -14,6 +14,9 @@ export function getWelcomeBannerHTML(): string {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cyberix Security API Server</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         * {
             margin: 0;
@@ -25,7 +28,7 @@ export function getWelcomeBannerHTML(): string {
             overflow: hidden;
         }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
             background: linear-gradient(135deg, #0f0f0f 0%, #1a1a1a 100%);
             display: flex;
             align-items: center;
@@ -93,13 +96,13 @@ export function getWelcomeBannerHTML(): string {
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            background: linear-gradient(135deg, #fb6514 0%, #ff8c42 100%);
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
             color: white;
             padding: 6px 18px;
             border-radius: 20px;
             font-size: 0.8rem;
             font-weight: 600;
-            box-shadow: 0 4px 12px rgba(251, 101, 20, 0.25);
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
         }
         .status-badge::before {
             content: '●';
