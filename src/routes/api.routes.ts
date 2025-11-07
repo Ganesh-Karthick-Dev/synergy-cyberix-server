@@ -1,19 +1,8 @@
 import { Router } from 'express';
-import { body } from 'express-validator';
-import { AuthController } from '../modules/controllers/auth.controller';
-import { validate } from '../middlewares/validation.middleware';
+import { RegistrationController } from '../modules/controllers/registration.controller';
 
 const router = Router();
-const authController = new AuthController();
-
-// Validation rules for registration
-const registerUserValidation = [
-  body('email').isEmail().normalizeEmail().withMessage('Please provide a valid organization email'),
-  body('firstName').isLength({ min: 2, max: 50 }).withMessage('First name must be 2-50 characters'),
-  body('lastName').isLength({ min: 2, max: 50 }).withMessage('Last name must be 2-50 characters'),
-  body('phone').matches(/^[\+]?[1-9][\d]{0,15}$/).withMessage('Please provide a valid phone number'),
-  body('subscriptionType').optional().isIn(['FREE', 'PRO', 'PRO_PLUS']).withMessage('Subscription type must be FREE, PRO, or PRO_PLUS')
-];
+const registrationController = new RegistrationController();
 
 // API Documentation endpoint
 router.get('/', (req, res) => {
@@ -29,7 +18,8 @@ router.get('/', (req, res) => {
   });
 });
 
-// Registration endpoint
-router.post('/register', validate(registerUserValidation), authController.registerUser.bind(authController));
+// Registration endpoint - Note: This route is also handled by decorators via RouteFactory
+// Keeping this for backward compatibility, but the decorator-based route should be used
+router.post('/register', registrationController.registerUser.bind(registrationController));
 
 export { router as apiRoutes };
