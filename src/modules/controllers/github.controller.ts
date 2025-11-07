@@ -130,13 +130,14 @@ export class GitHubController {
                          req.headers.authorization?.replace('Bearer ', '');
 
       if (!githubToken) {
-        return res.status(401).json({
+        res.status(401).json({
           success: false,
           error: {
             message: 'GitHub access token is required',
             statusCode: 401,
           },
         });
+        return;
       }
 
       const organizations = await this.githubService.getOrganizations(githubToken);
@@ -170,18 +171,31 @@ export class GitHubController {
   async getRepositories(req: Request, res: Response): Promise<void> {
     try {
       const { org } = req.params;
+      
+      if (!org) {
+        res.status(400).json({
+          success: false,
+          error: {
+            message: 'Organization name is required',
+            statusCode: 400,
+          },
+        });
+        return;
+      }
+
       const githubToken = req.headers['x-github-token'] as string || 
                          req.query.token as string ||
                          req.headers.authorization?.replace('Bearer ', '');
 
       if (!githubToken) {
-        return res.status(401).json({
+        res.status(401).json({
           success: false,
           error: {
             message: 'GitHub access token is required',
             statusCode: 401,
           },
         });
+        return;
       }
 
       const repositories = await this.githubService.getOrganizationRepos(githubToken, org);
@@ -216,6 +230,18 @@ export class GitHubController {
   async getRepositoryContents(req: Request, res: Response): Promise<void> {
     try {
       const { owner, repo } = req.params;
+      
+      if (!owner || !repo) {
+        res.status(400).json({
+          success: false,
+          error: {
+            message: 'Owner and repository name are required',
+            statusCode: 400,
+          },
+        });
+        return;
+      }
+
       const path = (req.query.path as string) || '';
       const branch = req.query.branch as string | undefined;
       const githubToken = req.headers['x-github-token'] as string || 
@@ -223,13 +249,14 @@ export class GitHubController {
                          req.headers.authorization?.replace('Bearer ', '');
 
       if (!githubToken) {
-        return res.status(401).json({
+        res.status(401).json({
           success: false,
           error: {
             message: 'GitHub access token is required',
             statusCode: 401,
           },
         });
+        return;
       }
 
       const contents = await this.githubService.getRepositoryContents(
@@ -269,18 +296,31 @@ export class GitHubController {
   async getBranches(req: Request, res: Response): Promise<void> {
     try {
       const { owner, repo } = req.params;
+      
+      if (!owner || !repo) {
+        res.status(400).json({
+          success: false,
+          error: {
+            message: 'Owner and repository name are required',
+            statusCode: 400,
+          },
+        });
+        return;
+      }
+
       const githubToken = req.headers['x-github-token'] as string || 
                          req.query.token as string ||
                          req.headers.authorization?.replace('Bearer ', '');
 
       if (!githubToken) {
-        return res.status(401).json({
+        res.status(401).json({
           success: false,
           error: {
             message: 'GitHub access token is required',
             statusCode: 401,
           },
         });
+        return;
       }
 
       const branches = await this.githubService.getRepositoryBranches(githubToken, owner, repo);
@@ -318,13 +358,14 @@ export class GitHubController {
                          req.headers.authorization?.replace('Bearer ', '');
 
       if (!githubToken) {
-        return res.status(401).json({
+        res.status(401).json({
           success: false,
           error: {
             message: 'GitHub access token is required',
             statusCode: 401,
           },
         });
+        return;
       }
 
       const userInfo = await this.githubService.getUserInfo(githubToken);
