@@ -1014,13 +1014,175 @@ export class AuthController {
     })(req, res, next);
   }
 
-  // Google OAuth Callback
+  // Google OAuth Login - Website (redirects to port 3001)
+  @Get('/google/website')
+  async googleWebsiteLogin(req: Request, res: Response, next: NextFunction): Promise<void> {
+    console.log('🌐 [Backend Website] Google OAuth login initiated for website');
+    console.log('🌐 [Backend Website] Request URL:', req.url);
+    console.log('🌐 [Backend Website] Request query:', req.query);
+    
+    if (!config.google) {
+      console.error('🌐 [Backend Website] Google OAuth not configured');
+      res.status(503).json({
+        success: false,
+        error: {
+          message: 'Google OAuth is not configured',
+          statusCode: 503
+        }
+      });
+      return;
+    }
+
+    // Store redirect URL in session if provided
+    if (req.query.redirect) {
+      (req.session as any).redirectUrl = req.query.redirect as string;
+      console.log('🌐 [Backend Website] Stored redirect URL in session:', req.query.redirect);
+    }
+
+    // Store that this is for website (port 3001)
+    (req.session as any).isWebsite = true;
+    console.log('🌐 [Backend Website] Marked as website OAuth in session');
+
+    console.log('🌐 [Backend Website] Initiating Passport Google authentication for website...');
+    // Use 'google-website' strategy instead of 'google'
+    return passport.authenticate('google-website', {
+      scope: ['profile', 'email']
+    })(req, res, next);
+  }
+
+  // Google OAuth Callback Handler - Website (redirects to port 3001)
+  // This is called internally from the main callback handler
+  private async googleWebsiteCallback(req: Request, res: Response, next: NextFunction): Promise<void> {
+    console.log('🌐 [Backend Website Callback] Google OAuth callback received for website');
+    console.log('🌐 [Backend Website Callback] Request URL:', req.url);
+    console.log('🌐 [Backend Website Callback] Request query:', req.query);
+    
+    if (!config.google) {
+      console.error('🌐 [Backend Website Callback] Google OAuth not configured');
+      res.status(503).json({
+        success: false,
+        error: {
+          message: 'Google OAuth is not configured',
+          statusCode: 503
+        }
+      });
+      return;
+    }
+
+    console.log('🌐 [Backend Website Callback] Authenticating with Passport Google website strategy...');
+    passport.authenticate('google-website', { session: false }, async (err: any, user: any) => {
+      console.log('🌐 [Backend Website Callback] Passport authenticate callback triggered');
+      
+      if (err || !user) {
+        const errorMessage = err?.message || 'Google authentication failed';
+        console.error('🌐 [Backend Website Callback] Authentication failed:', errorMessage);
+        // Website frontend URL - use environment variable or default to port 3001
+        const websiteUrl = process.env.WEBSITE_URL || 'http://localhost:3001';
+        return res.redirect(`${websiteUrl}/login?error=${encodeURIComponent(errorMessage)}`);
+      }
+
+      try {
+        console.log('🌐 [Backend Website Callback] Processing successful authentication for user:', user.email);
+        
+        const deviceInfo = {
+          userAgent: req.get('User-Agent') || '',
+          platform: 'web',
+          language: req.get('Accept-Language') || 'en',
+          timestamp: new Date().toISOString()
+        };
+
+        const userRole = typeof user.role === 'string' ? user.role : (user as any).role || 'USER';
+        const userStatus = (user as any).status || ((user as any).isActive ? 'ACTIVE' : 'INACTIVE');
+        
+        const tokens = this.authService.generateTokens({
+          id: user.id,
+          email: user.email,
+          role: userRole,
+          isActive: userStatus === 'ACTIVE'
+        });
+
+        await this.authService.createSession(
+          user.id,
+          tokens.accessToken,
+          JSON.stringify(deviceInfo),
+          req.ip || '',
+          req.get('User-Agent') || ''
+        );
+
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { lastLoginAt: new Date() }
+        });
+
+        await this.authService.logLoginAttempt(
+          user.id,
+          user.email,
+          true,
+          req.ip || '',
+          req.get('User-Agent') || ''
+        );
+
+        // Set cookies
+        const cookieOptions = {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: (process.env.NODE_ENV === 'production' ? 'strict' : 'lax') as 'strict' | 'lax',
+          maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+          path: '/',
+        };
+        
+        res.cookie('accessToken', tokens.accessToken, cookieOptions);
+        if (tokens.refreshToken) {
+          res.cookie('refreshToken', tokens.refreshToken, {
+            ...cookieOptions,
+            maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+          });
+        }
+        res.cookie('isAuthenticated', 'true', {
+          httpOnly: false,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+          maxAge: 7 * 24 * 60 * 60 * 1000,
+          path: '/',
+        });
+
+        // Get redirect URL from session or default to root
+        const redirectUrl = (req.session as any)?.redirectUrl || '/';
+        delete (req.session as any)?.redirectUrl;
+        delete (req.session as any)?.isWebsite;
+
+        // Website frontend URL - use environment variable or default to port 3001
+        const websiteUrl = process.env.WEBSITE_URL || 'http://localhost:3001';
+        const finalRedirectUrl = `${websiteUrl}${redirectUrl}`;
+        
+        console.log('🌐 [Backend Website Callback] Redirecting to website:', finalRedirectUrl);
+        return res.redirect(finalRedirectUrl);
+      } catch (error: any) {
+        console.error('🌐 [Backend Website Callback] Error:', error);
+        const websiteUrl = process.env.WEBSITE_URL || 'http://localhost:3001';
+        return res.redirect(`${websiteUrl}/login?error=${encodeURIComponent(error?.message || 'Login failed')}`);
+      }
+    })(req, res);
+  }
+
+  // Google OAuth Callback - Handles both admin and website
   @Get('/google/callback')
   async googleCallback(req: Request, res: Response, next: NextFunction): Promise<void> {
     console.log('🟡 [Backend Callback] Google OAuth callback received');
     console.log('🟡 [Backend Callback] Request URL:', req.url);
     console.log('🟡 [Backend Callback] Request query:', req.query);
     console.log('🟡 [Backend Callback] Session ID:', req.sessionID);
+    
+    // Check if this is a website request (stored in session when /google/website was called)
+    const isWebsite = (req.session as any)?.isWebsite;
+    console.log('🟡 [Backend Callback] Is website request:', isWebsite);
+    
+    if (isWebsite) {
+      // Route to website callback handler
+      console.log('🟡 [Backend Callback] Routing to website callback handler');
+      return this.googleWebsiteCallback(req, res, next);
+    }
+
     console.log('🟡 [Backend Callback] Request headers:', {
       cookie: req.headers.cookie ? 'Present' : 'Missing',
       userAgent: req.headers['user-agent'],
@@ -1039,7 +1201,7 @@ export class AuthController {
       return;
     }
 
-    console.log('🟡 [Backend Callback] Authenticating with Passport Google strategy...');
+    console.log('🟡 [Backend Callback] Authenticating with Passport Google strategy (admin)...');
     passport.authenticate('google', { session: false }, async (err: any, user: any) => {
       console.log('🟡 [Backend Callback] Passport authenticate callback triggered');
       console.log('🟡 [Backend Callback] Error:', err ? {

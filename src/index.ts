@@ -24,6 +24,7 @@ import { PlanController } from './modules/controllers/plan.controller';
 import { SecurityToolsController } from './modules/controllers/security-tools.controller';
 import { NotificationsController } from './modules/controllers/notifications.controller';
 import { AdsController } from './modules/controllers/ads.controller';
+import { FcmController } from './modules/controllers/fcm.controller';
 import { UserService } from './modules/services/user.service';
 import { EmailService } from './modules/services/email.service';
 import { AuthService } from './modules/services/auth.service';
@@ -108,6 +109,7 @@ class Server {
     container.autoRegister(SecurityToolsController);
     container.autoRegister(NotificationsController);
     container.autoRegister(AdsController);
+    container.autoRegister(FcmController);
 
     // Health check endpoint
     this.app.get('/health', (req, res) => {

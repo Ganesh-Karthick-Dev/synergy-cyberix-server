@@ -244,4 +244,78 @@ export class AdsController {
       });
     }
   }
+
+  @Post('/:id/impression')
+  async trackImpression(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+
+      if (!id) {
+        res.status(400).json({
+          success: false,
+          error: {
+            message: 'Ad ID is required',
+            statusCode: 400
+          }
+        });
+        return;
+      }
+
+      const updatedAd = await this.adsService.trackImpression(id);
+
+      const response: ApiResponse = {
+        success: true,
+        data: updatedAd,
+        message: 'Impression tracked successfully'
+      };
+
+      res.json(response);
+    } catch (error: any) {
+      const statusCode = error.statusCode || 500;
+      res.status(statusCode).json({
+        success: false,
+        error: {
+          message: error.message || 'Failed to track impression',
+          statusCode
+        }
+      });
+    }
+  }
+
+  @Post('/:id/click')
+  async trackClick(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+
+      if (!id) {
+        res.status(400).json({
+          success: false,
+          error: {
+            message: 'Ad ID is required',
+            statusCode: 400
+          }
+        });
+        return;
+      }
+
+      const updatedAd = await this.adsService.trackClick(id);
+
+      const response: ApiResponse = {
+        success: true,
+        data: updatedAd,
+        message: 'Click tracked successfully'
+      };
+
+      res.json(response);
+    } catch (error: any) {
+      const statusCode = error.statusCode || 500;
+      res.status(statusCode).json({
+        success: false,
+        error: {
+          message: error.message || 'Failed to track click',
+          statusCode
+        }
+      });
+    }
+  }
 }

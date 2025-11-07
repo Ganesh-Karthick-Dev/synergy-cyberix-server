@@ -299,6 +299,70 @@ export class AdsService {
   }
 
   /**
+   * Track ad impression (increment impression count)
+   */
+  async trackImpression(id: string) {
+    try {
+      const ad = await prisma.postAd.findUnique({
+        where: { id },
+      });
+
+      if (!ad) {
+        throw new CustomError('Ad not found', 404);
+      }
+
+      const updatedAd = await prisma.postAd.update({
+        where: { id },
+        data: {
+          impressions: {
+            increment: 1,
+          },
+        },
+      });
+
+      return this.transformAd(updatedAd);
+    } catch (error: any) {
+      if (error instanceof CustomError) {
+        throw error;
+      }
+      logger.error('Error tracking impression:', error);
+      throw new CustomError('Failed to track impression', 500);
+    }
+  }
+
+  /**
+   * Track ad click (increment click count)
+   */
+  async trackClick(id: string) {
+    try {
+      const ad = await prisma.postAd.findUnique({
+        where: { id },
+      });
+
+      if (!ad) {
+        throw new CustomError('Ad not found', 404);
+      }
+
+      const updatedAd = await prisma.postAd.update({
+        where: { id },
+        data: {
+          clicks: {
+            increment: 1,
+          },
+        },
+      });
+
+      return this.transformAd(updatedAd);
+    } catch (error: any) {
+      if (error instanceof CustomError) {
+        throw error;
+      }
+      logger.error('Error tracking click:', error);
+      throw new CustomError('Failed to track click', 500);
+    }
+  }
+
+  /**
    * Transform database ad to API format
    */
   private transformAd(ad: any) {

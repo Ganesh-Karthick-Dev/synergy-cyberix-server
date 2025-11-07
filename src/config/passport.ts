@@ -199,6 +199,111 @@ if (config.google) {
     }
   }));
   console.log('✅ Google OAuth strategy registered successfully');
+  
+  // Google OAuth Strategy for Website - Register with name 'google-website'
+  // IMPORTANT: Use the SAME callback URL as admin (already configured in Google Console)
+  // We'll differentiate between admin and website in the callback handler
+  console.log('📝 Registering Google OAuth strategy for website...');
+  // Use the same callback URL as admin to avoid redirect_uri_mismatch
+  const websiteCallbackUrl = config.google.callbackURL;
+  
+  console.log('📝 [Passport Website] Callback URL (reusing admin callback):', websiteCallbackUrl);
+  passport.use('google-website', new GoogleStrategy({
+    clientID: config.google.clientId,
+    clientSecret: config.google.clientSecret,
+    callbackURL: websiteCallbackUrl
+  }, async (accessToken, refreshToken, profile, done) => {
+    console.log('🟣 [Passport Website Strategy] Google OAuth callback received');
+    console.log('🟣 [Passport Website Strategy] Profile:', {
+      id: profile.id,
+      displayName: profile.displayName,
+      emails: profile.emails?.map(e => e.value),
+      photos: profile.photos?.map(p => p.value),
+    });
+    try {
+      const { id, displayName, emails, photos } = profile;
+      const email = emails?.[0]?.value?.toLowerCase();
+      
+      if (!email) {
+        console.error('🟣 [Passport Website Strategy] No email found in Google profile');
+        return done(new Error('No email found in Google profile'), false);
+      }
+
+      // Check if user exists by email or googleId
+      let user = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { email },
+            { googleId: id }
+          ]
+        }
+      });
+
+      if (user) {
+        // Update existing user with Google ID if not already set
+        if (!user.googleId) {
+          user = await prisma.user.update({
+            where: { id: user.id },
+            data: { 
+              googleId: id,
+              emailVerified: true,
+              avatar: photos?.[0]?.value || user.avatar,
+              firstName: displayName?.split(' ')[0] || user.firstName,
+              lastName: displayName?.split(' ').slice(1).join(' ') || user.lastName
+            }
+          });
+        } else {
+          user = await prisma.user.update({
+            where: { id: user.id },
+            data: {
+              avatar: photos?.[0]?.value || user.avatar,
+              firstName: displayName?.split(' ')[0] || user.firstName,
+              lastName: displayName?.split(' ').slice(1).join(' ') || user.lastName,
+              emailVerified: true
+            }
+          });
+        }
+      } else {
+        // Create new user
+        const [firstName, ...lastNameParts] = displayName?.split(' ') || [];
+        user = await prisma.user.create({
+          data: {
+            email,
+            googleId: id,
+            firstName,
+            lastName: lastNameParts.join(' ') || null,
+            avatar: photos?.[0]?.value || null,
+            emailVerified: true,
+            status: 'ACTIVE',
+            role: 'USER'
+          }
+        });
+      }
+
+      if (!user || user.status !== 'ACTIVE') {
+        console.error('🟣 [Passport Website Strategy] Account is not active');
+        return done(new Error('Account is not active'), false);
+      }
+
+      // Return user in the format expected by the system
+      const userPayload = {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        role: user.role,
+        status: user.status,
+        isActive: user.status === 'ACTIVE',
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt
+      };
+
+      return done(null, userPayload as any);
+    } catch (error: any) {
+      console.error('🟣 [Passport Website Strategy] Error:', error);
+      return done(error, false);
+    }
+  }));
+  console.log('✅ Google OAuth website strategy registered successfully');
 } else {
   console.warn('⚠️  Google OAuth not configured - strategy will not be available');
 }

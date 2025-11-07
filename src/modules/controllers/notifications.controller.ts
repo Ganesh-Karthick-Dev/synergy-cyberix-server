@@ -4,6 +4,9 @@ import { Validate } from '../../decorators/validation.decorator';
 import { Service } from '../../decorators/service.decorator';
 import { ApiResponse } from '../../types';
 import { body } from 'express-validator';
+import { FirebaseService } from '../services/firebase.service';
+import { prisma } from '../../config/db';
+import { logger } from '../../utils/logger';
 
 @Service()
 @Controller('/api/notifications')
@@ -192,15 +195,90 @@ export class NotificationsController {
   async sendNotification(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
+      const firebaseService = new FirebaseService();
 
-      // Mock sending - in real app, this would send actual notifications
+      // Get notification from database (for now using mock data structure)
+      // In production, you'd fetch from database
+      const notifications = [
+        {
+          id: '1',
+          title: 'New Security Update Available',
+          message: 'We\'ve released a new security scanner update with enhanced vulnerability detection. Update now to stay protected!',
+          type: 'info',
+          targetAudience: 'all',
+        },
+        {
+          id: '2',
+          title: '50% OFF - Premium Security Suite',
+          message: 'Limited time offer! Get 50% discount on our Premium Security Suite. Secure your business today!',
+          type: 'promotion',
+          targetAudience: 'trial',
+        },
+        {
+          id: '3',
+          title: 'Security Alert - Critical Vulnerability',
+          message: 'We\'ve detected a critical security vulnerability in your system. Please run a security scan immediately.',
+          type: 'error',
+          targetAudience: 'active',
+        }
+      ];
+
+      const notification = notifications.find(n => n.id === id);
+      if (!notification) {
+        res.status(404).json({
+          success: false,
+          error: { message: 'Notification not found', statusCode: 404 }
+        });
+        return;
+      }
+
+      // Get target users based on audience
+      let targetUserIds: string[] = [];
+
+      if (notification.targetAudience === 'all') {
+        const users = await prisma.user.findMany({
+          where: { status: 'ACTIVE' },
+          select: { id: true }
+        });
+        targetUserIds = users.map(u => u.id);
+      } else {
+        // For other audiences, you'd implement filtering logic
+        // For now, sending to all active users
+        const users = await prisma.user.findMany({
+          where: { status: 'ACTIVE' },
+          select: { id: true }
+        });
+        targetUserIds = users.map(u => u.id);
+      }
+
+      // Send push notifications
+      const pushResult = await firebaseService.sendBulkNotification(targetUserIds, {
+        title: notification.title,
+        body: notification.message,
+      });
+
+      // Update notification in database with sent status
+      // For now, just log the results
+      logger.info('Push notification sent', {
+        notificationId: id,
+        targetUsers: targetUserIds.length,
+        successCount: pushResult.successCount,
+        failureCount: pushResult.failureCount,
+      });
+
       const response: ApiResponse = {
         success: true,
-        message: 'Notification sent successfully'
+        message: `Notification sent to ${pushResult.successCount} devices successfully`,
+        data: {
+          sent: pushResult.successCount,
+          failed: pushResult.failureCount,
+          total: targetUserIds.length,
+        }
       };
 
       res.json(response);
     } catch (error) {
+      logger.error('Failed to send notification', { error, notificationId: req.params.id });
       res.status(500).json({
         success: false,
         error: {
