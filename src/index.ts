@@ -30,6 +30,7 @@ import { UserService } from './modules/services/user.service';
 import { EmailService } from './modules/services/email.service';
 import { AuthService } from './modules/services/auth.service';
 import { startCleanupScheduler } from './utils/cleanup';
+import { getWelcomeBannerHTML } from './utils/welcome-banner';
 
 class Server {
   private app: express.Application;
@@ -97,6 +98,11 @@ class Server {
   }
 
   private initializeRoutes(): void {
+    // Welcome banner route - must be before API routes
+    this.app.get('/', (req, res) => {
+      res.send(getWelcomeBannerHTML());
+    });
+
     // Register services in container
     container.autoRegister(EmailService);
     container.autoRegister(AuthService);
