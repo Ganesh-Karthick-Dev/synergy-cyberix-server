@@ -105,10 +105,10 @@ export class AuthService {
    * Create a new session for a user (multiple devices allowed)
    */
   async createSession(
-    userId: string, 
-    token: string, 
-    deviceInfo?: string, 
-    ipAddress?: string, 
+    userId: string,
+    token: string,
+    deviceInfo?: any,
+    ipAddress?: string,
     userAgent?: string
   ): Promise<void> {
     try {
@@ -117,7 +117,7 @@ export class AuthService {
         data: {
           userId,
           token,
-          deviceInfo,
+          deviceInfo: typeof deviceInfo === 'object' ? JSON.stringify(deviceInfo) : deviceInfo,
           ipAddress,
           userAgent,
           expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
