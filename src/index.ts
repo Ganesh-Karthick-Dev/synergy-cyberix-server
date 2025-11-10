@@ -52,8 +52,10 @@ class Server {
       origin: true, // Allow all origins
       credentials: true, // Required for cookies
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'X-Requested-With'],
-      exposedHeaders: ['Set-Cookie']
+      allowedHeaders: ['Content-Type', 'X-Requested-With', 'Authorization', 'Cookie'],
+      exposedHeaders: ['Set-Cookie'],
+      preflightContinue: false,
+      optionsSuccessStatus: 204
     }));
 
     // Rate limiting

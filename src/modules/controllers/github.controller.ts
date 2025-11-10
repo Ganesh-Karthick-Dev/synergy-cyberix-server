@@ -5,8 +5,9 @@ import { ApiResponse } from '../../types';
 import { authenticate } from '../../middlewares/auth.middleware';
 import { Use } from '../../decorators/middleware.decorator';
 import { GitHubService } from '../services/github.service';
-import passport from 'passport';
 import { config } from '../../config/env.config';
+import axios from 'axios';
+import crypto from 'crypto';
 
 @Service()
 @Controller('/api/github')
@@ -20,21 +21,64 @@ export class GitHubController {
   /**
    * Initiate GitHub OAuth flow
    * GET /api/github/auth
+   * 
+   * Query Parameters:
+   * - redirect (optional): Custom redirect URL for Electron app (e.g., myapp://github-callback)
+   * 
+   * Expected Behavior:
+   * 1. Construct GitHub OAuth URL with client_id, redirect_uri, scope, response_type, and state
+   * 2. Redirect user to GitHub's OAuth page
    */
   @Get('/auth')
   async initiateAuth(req: Request, res: Response): Promise<void> {
     try {
-      // Store redirect URL if provided (for Electron app)
-      if (req.query.redirect) {
-        (req.session as any).githubRedirect = req.query.redirect as string;
+      // Check if GitHub OAuth is configured
+      if (!config.github) {
+        res.status(503).json({
+          success: false,
+          error: {
+            message: 'GitHub OAuth is not configured',
+            statusCode: 503,
+          },
+        });
+        return;
       }
 
-      // Initiate OAuth flow
-      passport.authenticate('github', {
-        scope: ['user:email', 'read:org', 'repo'],
-        session: false,
-      })(req, res);
+      // Get redirect URL from query parameter (default for Electron app)
+      const redirect = (req.query.redirect as string) || 'myapp://github-callback';
+
+      // Generate state parameter for security
+      const state = crypto.randomBytes(32).toString('hex');
+
+      // Store state and redirect URL in session
+      if (!req.session) {
+        res.status(500).json({
+          success: false,
+          error: {
+            message: 'Session not available',
+            statusCode: 500,
+          },
+        });
+        return;
+      }
+
+      (req.session as any).githubOAuthState = state;
+      (req.session as any).githubRedirect = redirect;
+
+      // Construct GitHub OAuth URL
+      const redirectUri = config.github.callbackURL;
+      const scope = 'user:email,read:org,repo';
+      const githubAuthUrl = `https://github.com/login/oauth/authorize?` +
+        `response_type=code&` +
+        `redirect_uri=${encodeURIComponent(redirectUri)}&` +
+        `scope=${encodeURIComponent(scope)}&` +
+        `client_id=${config.github.clientId}&` +
+        `state=${state}`;
+
+      // Redirect to GitHub OAuth page
+      res.redirect(githubAuthUrl);
     } catch (error: any) {
+      console.error('Error initiating GitHub OAuth:', error);
       res.status(500).json({
         success: false,
         error: {
@@ -48,70 +92,123 @@ export class GitHubController {
   /**
    * GitHub OAuth callback
    * GET /api/github/callback
+   * 
+   * Query Parameters (from GitHub):
+   * - code: Authorization code from GitHub
+   * - state: State parameter (if used)
+   * - error: Error code (if authorization failed)
+   * - error_description: Error description (if authorization failed)
+   * 
+   * Expected Behavior:
+   * 1. Validate the authorization code and state (if used)
+   * 2. Exchange the code for an access token by calling GitHub's token endpoint
+   * 3. Get user info from GitHub API using the access token
+   * 4. Redirect to the Electron app's custom protocol URL with token and user info
    */
   @Get('/callback')
   async handleCallback(req: Request, res: Response): Promise<void> {
-    passport.authenticate('github', { session: false }, async (err: any, user: any, info: any) => {
+    try {
+      // Check if GitHub OAuth is configured
+      if (!config.github) {
+        const redirectUrl = (req.session as any)?.githubRedirect || 'myapp://github-callback';
+        return res.redirect(`${redirectUrl}?error=not_configured&error_description=GitHub OAuth is not configured`);
+      }
+
+      const { code, state, error, error_description } = req.query;
+
+      // Handle errors from GitHub
+      if (error) {
+        const redirectUrl = (req.session as any)?.githubRedirect || 'myapp://github-callback';
+        const errorDesc = error_description || error;
+        return res.redirect(`${redirectUrl}?error=${error}&error_description=${encodeURIComponent(errorDesc as string)}`);
+      }
+
+      // Validate state parameter
+      if (state && req.session) {
+        const storedState = (req.session as any)?.githubOAuthState;
+        if (storedState !== state) {
+          const redirectUrl = (req.session as any)?.githubRedirect || 'myapp://github-callback';
+          return res.redirect(`${redirectUrl}?error=invalid_state&error_description=State parameter mismatch`);
+        }
+      }
+
+      // Validate code parameter
+      if (!code) {
+        const redirectUrl = (req.session as any)?.githubRedirect || 'myapp://github-callback';
+        return res.redirect(`${redirectUrl}?error=missing_code&error_description=Authorization code not provided`);
+      }
+
+      // Exchange code for access token
+      let accessToken: string;
       try {
-        if (err || !user) {
-          return res.status(401).json({
-            success: false,
-            error: {
-              message: err?.message || info?.message || 'GitHub authentication failed',
-              statusCode: 401,
+        const tokenResponse = await axios.post(
+          'https://github.com/login/oauth/access_token',
+          {
+            client_id: config.github.clientId,
+            client_secret: config.github.clientSecret,
+            code: code,
+            redirect_uri: config.github.callbackURL,
+          },
+          {
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json',
             },
-          });
+          }
+        );
+
+        if (tokenResponse.data.error) {
+          throw new Error(tokenResponse.data.error_description || tokenResponse.data.error);
         }
 
-        // Get access token from the OAuth flow
-        // Note: In a real implementation, you'd store this token securely
-        const accessToken = (user as any).accessToken;
+        accessToken = tokenResponse.data.access_token;
 
         if (!accessToken) {
-          return res.status(401).json({
-            success: false,
-            error: {
-              message: 'Access token not received',
-              statusCode: 401,
-            },
-          });
+          throw new Error('Access token not received from GitHub');
         }
-
-        // Get user info from GitHub
-        const githubUser = await this.githubService.getUserInfo(accessToken);
-
-        // Check if redirect URL is stored (for Electron app)
-        const redirectUrl = (req.session as any)?.githubRedirect;
-
-        if (redirectUrl) {
-          // Redirect to Electron app with token
-          delete (req.session as any).githubRedirect;
-          return res.redirect(
-            `${redirectUrl}?token=${accessToken}&user=${encodeURIComponent(JSON.stringify(githubUser))}`
-          );
-        }
-
-        // Return token and user info for API usage
-        const response: ApiResponse = {
-          success: true,
-          data: {
-            accessToken,
-            user: githubUser,
-          },
-          message: 'GitHub authentication successful',
-        };
-
-        res.json(response);
       } catch (error: any) {
-        res.status(500).json({
-          success: false,
-          error: {
-            message: error.message || 'Failed to process GitHub callback',
-            statusCode: 500,
+        console.error('Error exchanging code for token:', error);
+        const redirectUrl = (req.session as any)?.githubRedirect || 'myapp://github-callback';
+        const errorMessage = error.response?.data?.error_description || error.message || 'Failed to exchange code for token';
+        return res.redirect(`${redirectUrl}?error=token_exchange_failed&error_description=${encodeURIComponent(errorMessage)}`);
+      }
+
+      // Get user info from GitHub API
+      let githubUser: any;
+      try {
+        const userResponse = await axios.get('https://api.github.com/user', {
+          headers: {
+            'Authorization': `token ${accessToken}`,
+            'Accept': 'application/vnd.github.v3+json',
           },
         });
+        githubUser = userResponse.data;
+      } catch (error: any) {
+        console.error('Error fetching user info:', error);
+        const redirectUrl = (req.session as any)?.githubRedirect || 'myapp://github-callback';
+        const errorMessage = error.response?.data?.message || error.message || 'Failed to fetch user info';
+        return res.redirect(`${redirectUrl}?error=user_info_failed&error_description=${encodeURIComponent(errorMessage)}`);
       }
-    })(req, res);
+
+      // Get stored redirect URL (for Electron app)
+      const redirectUrl = (req.session as any)?.githubRedirect || 'myapp://github-callback';
+
+      // Clean up session
+      if (req.session) {
+        delete (req.session as any).githubOAuthState;
+        delete (req.session as any).githubRedirect;
+      }
+
+      // Redirect to Electron app with token and user info
+      const userJson = encodeURIComponent(JSON.stringify(githubUser));
+      return res.redirect(`${redirectUrl}?token=${accessToken}&user=${userJson}`);
+
+    } catch (error: any) {
+      console.error('OAuth callback error:', error);
+      const redirectUrl = (req.session as any)?.githubRedirect || 'myapp://github-callback';
+      const errorMessage = error.message || 'Failed to process GitHub callback';
+      return res.redirect(`${redirectUrl}?error=callback_failed&error_description=${encodeURIComponent(errorMessage)}`);
+    }
   }
 
   /**
@@ -130,13 +227,14 @@ export class GitHubController {
                          req.headers.authorization?.replace('Bearer ', '');
 
       if (!githubToken) {
-        return res.status(401).json({
+        res.status(401).json({
           success: false,
           error: {
             message: 'GitHub access token is required',
             statusCode: 401,
           },
         });
+        return;
       }
 
       const organizations = await this.githubService.getOrganizations(githubToken);
@@ -175,13 +273,25 @@ export class GitHubController {
                          req.headers.authorization?.replace('Bearer ', '');
 
       if (!githubToken) {
-        return res.status(401).json({
+        res.status(401).json({
           success: false,
           error: {
             message: 'GitHub access token is required',
             statusCode: 401,
           },
         });
+        return;
+      }
+
+      if (!org) {
+        res.status(400).json({
+          success: false,
+          error: {
+            message: 'Organization name is required',
+            statusCode: 400,
+          },
+        });
+        return;
       }
 
       const repositories = await this.githubService.getOrganizationRepos(githubToken, org);
@@ -223,13 +333,25 @@ export class GitHubController {
                          req.headers.authorization?.replace('Bearer ', '');
 
       if (!githubToken) {
-        return res.status(401).json({
+        res.status(401).json({
           success: false,
           error: {
             message: 'GitHub access token is required',
             statusCode: 401,
           },
         });
+        return;
+      }
+
+      if (!owner || !repo) {
+        res.status(400).json({
+          success: false,
+          error: {
+            message: 'Owner and repository name are required',
+            statusCode: 400,
+          },
+        });
+        return;
       }
 
       const contents = await this.githubService.getRepositoryContents(
@@ -274,13 +396,25 @@ export class GitHubController {
                          req.headers.authorization?.replace('Bearer ', '');
 
       if (!githubToken) {
-        return res.status(401).json({
+        res.status(401).json({
           success: false,
           error: {
             message: 'GitHub access token is required',
             statusCode: 401,
           },
         });
+        return;
+      }
+
+      if (!owner || !repo) {
+        res.status(400).json({
+          success: false,
+          error: {
+            message: 'Owner and repository name are required',
+            statusCode: 400,
+          },
+        });
+        return;
       }
 
       const branches = await this.githubService.getRepositoryBranches(githubToken, owner, repo);
@@ -318,13 +452,14 @@ export class GitHubController {
                          req.headers.authorization?.replace('Bearer ', '');
 
       if (!githubToken) {
-        return res.status(401).json({
+        res.status(401).json({
           success: false,
           error: {
             message: 'GitHub access token is required',
             statusCode: 401,
           },
         });
+        return;
       }
 
       const userInfo = await this.githubService.getUserInfo(githubToken);

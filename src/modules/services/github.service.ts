@@ -37,6 +37,96 @@ export class GitHubService {
   }
 
   /**
+   * Get user's own repositories
+   */
+  async getUserRepos(accessToken: string) {
+    try {
+      const response = await axios.get(`${this.baseUrl}/user/repos`, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: 'application/vnd.github.v3+json',
+        },
+        params: {
+          per_page: 100,
+          sort: 'updated',
+          affiliation: 'owner,collaborator,organization_member',
+        },
+      });
+
+      return response.data.map((repo: any) => ({
+        id: repo.id,
+        name: repo.name,
+        fullName: repo.full_name,
+        description: repo.description,
+        private: repo.private,
+        language: repo.language,
+        stars: repo.stargazers_count,
+        forks: repo.forks_count,
+        defaultBranch: repo.default_branch,
+        updatedAt: repo.updated_at,
+        url: repo.html_url,
+        cloneUrl: repo.clone_url,
+        sshUrl: repo.ssh_url,
+        owner: {
+          login: repo.owner.login,
+          avatar: repo.owner.avatar_url,
+        },
+      }));
+    } catch (error: any) {
+      logger.error('Error fetching user repositories:', error);
+      throw new CustomError(
+        error.response?.data?.message || 'Failed to fetch user repositories',
+        error.response?.status || 500
+      );
+    }
+  }
+
+  /**
+   * Get all repositories (user's own + organization repos)
+   */
+  async getAllRepositories(accessToken: string) {
+    try {
+      const allRepos: any[] = [];
+
+      // Get user's own repositories
+      try {
+        const userRepos = await this.getUserRepos(accessToken);
+        allRepos.push(...userRepos);
+      } catch (error: any) {
+        logger.warn('Failed to fetch user repositories:', error);
+      }
+
+      // Get organization repositories
+      try {
+        const orgs = await this.getOrganizations(accessToken);
+        for (const org of orgs) {
+          try {
+            const orgRepos = await this.getOrganizationRepos(accessToken, org.login);
+            allRepos.push(...orgRepos);
+          } catch (error: any) {
+            logger.warn(`Failed to fetch repos for org ${org.login}:`, error);
+          }
+        }
+      } catch (error: any) {
+        logger.warn('Failed to fetch organizations:', error);
+      }
+
+      // Remove duplicates (in case a repo appears in both user and org repos)
+      const uniqueRepos = Array.from(
+        new Map(allRepos.map(repo => [repo.id, repo])).values()
+      );
+
+      return uniqueRepos;
+    } catch (error: any) {
+      logger.error('Error fetching all repositories:', error);
+      throw new CustomError(
+        error.message || 'Failed to fetch all repositories',
+        error.statusCode || 500
+      );
+    }
+  }
+
+  /**
    * Get repositories for an organization
    */
   async getOrganizationRepos(accessToken: string, orgName: string) {

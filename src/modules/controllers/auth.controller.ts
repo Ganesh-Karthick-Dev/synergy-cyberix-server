@@ -236,10 +236,31 @@ export class AuthController {
         );
       }
 
-      // Clear cookies
-      res.clearCookie('accessToken');
-      res.clearCookie('refreshToken');
-      res.clearCookie('isAuthenticated');
+      // Clear cookies - ensure they're completely removed
+      // Use same options as when setting cookies to ensure proper clearing
+      res.clearCookie('accessToken', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: (process.env.NODE_ENV === 'production' ? 'strict' : 'lax') as 'strict' | 'lax',
+        path: '/',
+      });
+      res.clearCookie('refreshToken', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: (process.env.NODE_ENV === 'production' ? 'strict' : 'lax') as 'strict' | 'lax',
+        path: '/',
+      });
+      res.clearCookie('isAuthenticated', {
+        httpOnly: false,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+        path: '/',
+      });
+      
+      // Also set expired cookies to ensure they're removed from browser
+      res.cookie('accessToken', '', { maxAge: 0, path: '/' });
+      res.cookie('refreshToken', '', { maxAge: 0, path: '/' });
+      res.cookie('isAuthenticated', '', { maxAge: 0, path: '/' });
 
       const response: ApiResponse = {
         success: true,
@@ -487,6 +508,7 @@ export class AuthController {
       }
 
       const user = await this.userService.getUserById(req.user.id);
+      
       const response: ApiResponse = {
         success: true,
         data: user,
@@ -500,6 +522,65 @@ export class AuthController {
         error: {
           message: error instanceof Error ? error.message : 'Failed to retrieve profile',
           statusCode: 500
+        }
+      });
+    }
+  }
+
+  /**
+   * Get GitHub repositories for authenticated user
+   * GET /api/auth/github/repositories
+   */
+  @Get('/github/repositories')
+  @Use(authenticate)
+  async getGitHubRepositories(req: Request, res: Response): Promise<void> {
+    try {
+      if (!req.user) {
+        res.status(401).json({
+          success: false,
+          error: { message: 'Unauthorized', statusCode: 401 }
+        });
+        return;
+      }
+
+      // Get user with GitHub access token
+      const user = await this.userService.getUserById(req.user.id);
+      
+      // Type assertion to include githubAccessToken
+      const userWithToken = user as any;
+      
+      if (!userWithToken.githubAccessToken) {
+        res.status(400).json({
+          success: false,
+          error: {
+            message: 'GitHub access token not found. Please authenticate with GitHub first.',
+            statusCode: 400
+          }
+        });
+        return;
+      }
+
+      // Import GitHubService dynamically to avoid circular dependency
+      const { GitHubService } = await import('../services/github.service');
+      const githubService = new GitHubService();
+
+      // Fetch all repositories (user's own + organization repos)
+      const repositories = await githubService.getAllRepositories(userWithToken.githubAccessToken);
+
+      const response: ApiResponse = {
+        success: true,
+        data: repositories,
+        message: 'Repositories retrieved successfully'
+      };
+
+      res.json(response);
+    } catch (error: any) {
+      const statusCode = error.statusCode || 500;
+      res.status(statusCode).json({
+        success: false,
+        error: {
+          message: error.message || 'Failed to retrieve repositories',
+          statusCode
         }
       });
     }
@@ -1362,6 +1443,260 @@ export class AuthController {
         });
         const errorUrl = `${config.frontendUrl}/signin?error=${encodeURIComponent(error?.message || 'Login failed. Please try again.')}`;
         console.error('🟡 [Backend Callback] Redirecting to error page:', errorUrl);
+        return res.redirect(errorUrl);
+      }
+    })(req, res);
+  }
+
+  /**
+   * Initiate GitHub OAuth flow
+   * GET /api/auth/github
+   */
+  @Get('/github')
+  async initiateGitHubAuth(req: Request, res: Response): Promise<void> {
+    console.log('🟣 [Backend] GitHub OAuth initiation requested');
+    
+    if (!config.github) {
+      console.error('🟣 [Backend] GitHub OAuth not configured');
+      res.status(503).json({
+        success: false,
+        error: {
+          message: 'GitHub OAuth is not configured',
+          statusCode: 503
+        }
+      });
+      return;
+    }
+
+    // Store redirect URL if provided
+    if (req.query.redirect) {
+      (req.session as any).redirectUrl = req.query.redirect as string;
+    }
+
+    console.log('🟣 [Backend] Initiating GitHub OAuth flow...');
+    passport.authenticate('github', {
+      scope: ['user:email', 'read:org', 'repo'],
+      session: false,
+    })(req, res);
+  }
+
+  /**
+   * GitHub OAuth Callback
+   * GET /api/auth/github/callback
+   */
+  @Get('/github/callback')
+  async githubCallback(req: Request, res: Response, next: NextFunction): Promise<void> {
+    console.log('🟣 [Backend Callback] GitHub OAuth callback received');
+    console.log('🟣 [Backend Callback] Request URL:', req.url);
+    console.log('🟣 [Backend Callback] Request query:', req.query);
+    console.log('🟣 [Backend Callback] Session ID:', req.sessionID);
+
+    if (!config.github) {
+      console.error('🟣 [Backend Callback] GitHub OAuth not configured');
+      res.status(503).json({
+        success: false,
+        error: {
+          message: 'GitHub OAuth is not configured',
+          statusCode: 503
+        }
+      });
+      return;
+    }
+
+    console.log('🟣 [Backend Callback] Authenticating with Passport GitHub strategy...');
+    passport.authenticate('github', { session: false }, async (err: any, user: any) => {
+      console.log('🟣 [Backend Callback] Passport authenticate callback triggered');
+      console.log('🟣 [Backend Callback] Error:', err ? {
+        message: err.message,
+        name: err.name,
+      } : 'None');
+      console.log('🟣 [Backend Callback] User:', user ? {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+      } : 'None');
+
+      if (err || !user) {
+        // Redirect to frontend with error
+        const errorMessage = err?.message || 'GitHub authentication failed';
+        console.error('🟣 [Backend Callback] Authentication failed:', errorMessage);
+        console.log('🟣 [Backend Callback] Redirecting to:', `${config.frontendUrl}/signin?error=${encodeURIComponent(errorMessage)}`);
+        return res.redirect(`${config.frontendUrl}/signin?error=${encodeURIComponent(errorMessage)}`);
+      }
+
+      try {
+        console.log('🟣 [Backend Callback] Processing successful authentication for user:', user.email);
+        
+        // For OAuth logins, we allow multiple sessions (multiple devices allowed)
+
+        // Generate tokens
+        const deviceInfo = {
+          userAgent: req.get('User-Agent') || '',
+          platform: 'web',
+          language: req.get('Accept-Language') || 'en',
+          timestamp: new Date().toISOString()
+        };
+        console.log('🟣 [Backend Callback] Device info:', deviceInfo);
+
+        // Get user role (handle both string and object formats)
+        const userRole = typeof user.role === 'string' ? user.role : (user as any).role || 'USER';
+        const userStatus = (user as any).status || ((user as any).isActive ? 'ACTIVE' : 'INACTIVE');
+        console.log('🟣 [Backend Callback] User role:', userRole, 'Status:', userStatus);
+        
+        console.log('🟣 [Backend Callback] Generating tokens...');
+        const tokens = this.authService.generateTokens({
+          id: user.id,
+          email: user.email,
+          role: userRole,
+          isActive: userStatus === 'ACTIVE'
+        });
+        console.log('🟣 [Backend Callback] Tokens generated:', {
+          accessToken: tokens.accessToken ? 'Present' : 'Missing',
+          refreshToken: tokens.refreshToken ? 'Present' : 'Missing',
+        });
+
+        // Create new session
+        console.log('🟣 [Backend Callback] Creating session...');
+        await this.authService.createSession(
+          user.id,
+          tokens.accessToken,
+          JSON.stringify(deviceInfo),
+          req.ip || '',
+          req.get('User-Agent') || ''
+        );
+        console.log('🟣 [Backend Callback] Session created successfully');
+
+        // Update last login
+        console.log('🟣 [Backend Callback] Updating last login timestamp...');
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { lastLoginAt: new Date() }
+        });
+
+        // Log successful login
+        console.log('🟣 [Backend Callback] Logging successful login attempt...');
+        await this.authService.logLoginAttempt(
+          user.id,
+          user.email,
+          true,
+          req.ip || '',
+          req.get('User-Agent') || ''
+        );
+
+        // Set cookies with proper settings for persistence and cross-origin
+        console.log('🟣 [Backend Callback] Setting cookies...');
+        const cookieOptions = {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: (process.env.NODE_ENV === 'production' ? 'strict' : 'lax') as 'strict' | 'lax',
+          maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days - persists across app restarts
+          path: '/',
+          // Don't set domain - allows cookies to work for localhost with different ports
+        };
+        
+        res.cookie('accessToken', tokens.accessToken, cookieOptions);
+        console.log('🟣 [Backend Callback] accessToken cookie set (persists for 7 days)');
+
+        if (tokens.refreshToken) {
+          const refreshCookieOptions = {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: (process.env.NODE_ENV === 'production' ? 'strict' : 'lax') as 'strict' | 'lax',
+            maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days - persists across app restarts
+            path: '/',
+            // Don't set domain - allows cookies to work for localhost with different ports
+          };
+          res.cookie('refreshToken', tokens.refreshToken, refreshCookieOptions);
+          console.log('🟣 [Backend Callback] refreshToken cookie set (persists for 30 days)');
+        }
+
+        // Set a non-HttpOnly cookie that JavaScript can read to check auth status
+        res.cookie('isAuthenticated', 'true', {
+          httpOnly: false, // Allow JavaScript to read this
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+          maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days - persists across app restarts
+          path: '/',
+        });
+        console.log('🟣 [Backend Callback] isAuthenticated cookie set (persists for 7 days)');
+
+        // Get redirect URL from session or default to root
+        const redirectUrl = (req.session as any)?.redirectUrl || '/';
+        delete (req.session as any)?.redirectUrl;
+        console.log('🟣 [Backend Callback] Redirect URL from session:', redirectUrl);
+        console.log('🟣 [Backend Callback] Frontend URL:', config.frontendUrl);
+
+        // Get user with GitHub access token for token in URL
+        const userWithToken = await this.userService.getUserById(user.id);
+        const userWithTokenAny = userWithToken as any;
+        
+        // For ALL apps (Electron and web), redirect with token in URL for silent OAuth
+        // This avoids JSON blocking the UI
+        
+        // Try to detect the frontend URL from the redirect URL, referer, or use configured URL
+        let frontendUrl = config.frontendUrl;
+        
+        // First, try to extract from redirect URL (if it's a full URL)
+        if (redirectUrl.startsWith('http://') || redirectUrl.startsWith('https://')) {
+          try {
+            const redirectUrlObj = new URL(redirectUrl);
+            frontendUrl = `${redirectUrlObj.protocol}//${redirectUrlObj.host}`;
+            console.log('🟣 [Backend Callback] Detected frontend URL from redirect URL:', frontendUrl);
+          } catch (e) {
+            console.log('🟣 [Backend Callback] Could not parse redirect URL');
+          }
+        }
+        
+        // If not found, try referer
+        if (frontendUrl === config.frontendUrl) {
+          const referer = req.get('Referer');
+          if (referer) {
+            try {
+              const refererUrl = new URL(referer);
+              // Use the same origin as the referer (in case frontend is on different port)
+              frontendUrl = `${refererUrl.protocol}//${refererUrl.host}`;
+              console.log('🟣 [Backend Callback] Detected frontend URL from referer:', frontendUrl);
+            } catch (e) {
+              console.log('🟣 [Backend Callback] Could not parse referer, using configured URL');
+            }
+          }
+        }
+        
+        // Extract path from redirect URL (remove origin if it's a full URL)
+        let redirectPath = redirectUrl;
+        if (redirectUrl.startsWith('http://') || redirectUrl.startsWith('https://')) {
+          try {
+            const redirectUrlObj = new URL(redirectUrl);
+            redirectPath = redirectUrlObj.pathname + redirectUrlObj.search;
+          } catch (e) {
+            // Keep original redirectUrl
+          }
+        }
+
+        // Build redirect URL with token and autoAuth flag for silent login
+        const separator = redirectPath.includes('?') ? '&' : '?';
+        const tokenParam = `token=${encodeURIComponent(tokens.accessToken)}`;
+        const autoAuthParam = 'autoAuth=true';
+        const githubTokenParam = userWithTokenAny.githubAccessToken 
+          ? `&githubToken=${encodeURIComponent(userWithTokenAny.githubAccessToken)}`
+          : '';
+        
+        const finalRedirectUrl = `${frontendUrl}${redirectPath}${separator}${tokenParam}&${autoAuthParam}${githubTokenParam}`;
+        console.log('🟣 [Backend Callback] Silent OAuth redirect with token in URL');
+        console.log('🟣 [Backend Callback] Final redirect URL (token hidden for security):', 
+          `${frontendUrl}${redirectPath}${separator}token=***&autoAuth=true${githubTokenParam ? '&githubToken=***' : ''}`);
+        console.log('🟣 [Backend Callback] Redirecting to frontend for silent login...');
+
+        // Redirect to frontend with token in URL (silent OAuth - no JSON blocking)
+        return res.redirect(finalRedirectUrl);
+      } catch (error: any) {
+        console.error('🟣 [Backend Callback] Error in callback handler:', {
+          message: error?.message,
+          stack: error?.stack,
+          name: error?.name,
+        });
+        const errorUrl = `${config.frontendUrl}/signin?error=${encodeURIComponent(error?.message || 'Login failed. Please try again.')}`;
+        console.error('🟣 [Backend Callback] Redirecting to error page:', errorUrl);
         return res.redirect(errorUrl);
       }
     })(req, res);

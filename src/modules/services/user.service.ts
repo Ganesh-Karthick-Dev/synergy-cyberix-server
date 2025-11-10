@@ -220,8 +220,18 @@ export class UserService {
       select: {
         id: true,
         email: true,
+        username: true,
+        firstName: true,
+        lastName: true,
+        avatar: true,
+        phone: true,
         role: true,
         status: true,
+        emailVerified: true,
+        twoFactorEnabled: true,
+        lastLoginAt: true,
+        githubId: true,
+        githubAccessToken: true, // Include GitHub access token
         createdAt: true,
         updatedAt: true
       }

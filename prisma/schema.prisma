@@ -13,46 +13,48 @@ datasource db {
 // ==================== USER MANAGEMENT ====================
 
 model User {
-  id                String   @id @default(cuid())
-  email             String   @unique
-  username          String?  @unique
-  password          String?  // Made optional for Google OAuth users
-  googleId          String?  @unique
+  id                String     @id @default(cuid())
+  email             String     @unique
+  username          String?    @unique
+  password          String? // Made optional for Google OAuth users
+  googleId          String?    @unique
+  githubId          String?    @unique
+  githubAccessToken String? // Store GitHub OAuth access token for API access
   firstName         String?
   lastName          String?
   avatar            String?
   phone             String?
-  role              UserRole @default(USER)
+  role              UserRole   @default(USER)
   status            UserStatus @default(ACTIVE)
-  emailVerified     Boolean  @default(false)
-  twoFactorEnabled  Boolean  @default(false)
-  lastLoginAt        DateTime?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  emailVerified     Boolean    @default(false)
+  twoFactorEnabled  Boolean    @default(false)
+  lastLoginAt       DateTime?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
 
   // Relations
-  sessions          Session[]
-  subscriptions     UserSubscription[]
-  securityReports   SecurityReport[]
-  notifications     Notification[]
-  loginLogs         LoginLog[]
-  apiKeys           ApiKey[]
-  auditLogs         AuditLog[]
-  fcmTokens         UserFcmToken[]
+  sessions        Session[]
+  subscriptions   UserSubscription[]
+  securityReports SecurityReport[]
+  notifications   Notification[]
+  loginLogs       LoginLog[]
+  apiKeys         ApiKey[]
+  auditLogs       AuditLog[]
+  fcmTokens       UserFcmToken[]
 
   @@map("users")
 }
 
 model Session {
-  id        String   @id @default(cuid())
-  userId    String
-  token     String   @unique
+  id         String   @id @default(cuid())
+  userId     String
+  token      String   @unique
   deviceInfo String?
-  ipAddress String?
-  userAgent String?
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  ipAddress  String?
+  userAgent  String?
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   // Relations
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -94,20 +96,20 @@ model LoginBlock {
 // ==================== SERVICE PLANS ====================
 
 model ServicePlan {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  description String?
-  price       Decimal  @db.Decimal(10, 2)
-  currency    String   @default("USD")
+  id           String       @id @default(cuid())
+  name         String       @unique
+  description  String?
+  price        Decimal      @db.Decimal(10, 2)
+  currency     String       @default("USD")
   billingCycle BillingCycle @default(MONTHLY)
-  features    Json     // Store plan features as JSON
-  deliveryDays Int?    // Delivery time in days
-  isPopular    Boolean  @default(false)
-  isActive    Boolean  @default(true)
-  maxUsers    Int?
-  maxStorage  BigInt? // in bytes
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  features     Json // Store plan features as JSON
+  deliveryDays Int? // Delivery time in days
+  isPopular    Boolean      @default(false)
+  isActive     Boolean      @default(true)
+  maxUsers     Int?
+  maxStorage   BigInt? // in bytes
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
 
   // Relations
   subscriptions UserSubscription[]
@@ -116,19 +118,19 @@ model ServicePlan {
 }
 
 model UserSubscription {
-  id            String   @id @default(cuid())
+  id            String             @id @default(cuid())
   userId        String
   planId        String
   status        SubscriptionStatus @default(ACTIVE)
-  startDate     DateTime @default(now())
+  startDate     DateTime           @default(now())
   endDate       DateTime?
-  autoRenew     Boolean  @default(true)
+  autoRenew     Boolean            @default(true)
   paymentMethod String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
 
   // Relations
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   plan ServicePlan @relation(fields: [planId], references: [id], onDelete: Cascade)
 
   @@unique([userId, planId])
@@ -138,14 +140,14 @@ model UserSubscription {
 // ==================== SECURITY TOOLS ====================
 
 model SecurityTool {
-  id          String   @id @default(cuid())
-  name        String   @unique
+  id          String           @id @default(cuid())
+  name        String           @unique
   description String?
   category    SecurityCategory
-  isActive    Boolean  @default(true)
-  config      Json?    // Tool-specific configuration
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  isActive    Boolean          @default(true)
+  config      Json? // Tool-specific configuration
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
 
   // Relations
   reports SecurityReport[]
@@ -154,35 +156,35 @@ model SecurityTool {
 }
 
 model SecurityReport {
-  id        String   @id @default(cuid())
+  id        String        @id @default(cuid())
   userId    String
   toolId    String
   title     String
   content   String
   severity  SeverityLevel @default(MEDIUM)
-  status    ReportStatus @default(OPEN)
-  metadata  Json?    // Additional report data
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  status    ReportStatus  @default(OPEN)
+  metadata  Json? // Additional report data
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
 
   // Relations
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   tool SecurityTool @relation(fields: [toolId], references: [id], onDelete: Cascade)
 
   @@map("security_reports")
 }
 
 model ApiKey {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   userId      String
   name        String
-  key         String   @unique
-  permissions Json?    // API permissions
-  isActive    Boolean  @default(true)
+  key         String    @unique
+  permissions Json? // API permissions
+  isActive    Boolean   @default(true)
   lastUsedAt  DateTime?
   expiresAt   DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   // Relations
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -193,18 +195,18 @@ model ApiKey {
 // ==================== POST ADS ====================
 
 model AdCampaign {
-  id          String   @id @default(cuid())
-  title       String
-  description String?
-  content     String
+  id             String         @id @default(cuid())
+  title          String
+  description    String?
+  content        String
   targetAudience Json? // Targeting criteria
-  budget      Decimal  @db.Decimal(10, 2)
-  spent       Decimal  @db.Decimal(10, 2) @default(0)
-  status      CampaignStatus @default(DRAFT)
-  startDate   DateTime?
-  endDate     DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  budget         Decimal        @db.Decimal(10, 2)
+  spent          Decimal        @default(0) @db.Decimal(10, 2)
+  status         CampaignStatus @default(DRAFT)
+  startDate      DateTime?
+  endDate        DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
   // Relations
   ads Ad[]
@@ -233,18 +235,18 @@ model Ad {
 
 // PostAd model for marquee/header ads (simpler than AdCampaign)
 model PostAd {
-  id          String   @id @default(cuid())
+  id          String     @id @default(cuid())
   title       String
   content     String
   link        String?
-  isActive    Boolean  @default(false)
+  isActive    Boolean    @default(false)
   priority    AdPriority @default(MEDIUM)
   startDate   DateTime?
   endDate     DateTime?
-  impressions Int      @default(0)
-  clicks      Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  impressions Int        @default(0)
+  clicks      Int        @default(0)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 
   @@map("post_ads")
 }
@@ -252,16 +254,16 @@ model PostAd {
 // ==================== PUSH NOTIFICATIONS ====================
 
 model Notification {
-  id        String   @id @default(cuid())
+  id        String           @id @default(cuid())
   userId    String?
   title     String
   message   String
   type      NotificationType
-  data      Json?    // Additional notification data
-  isRead    Boolean  @default(false)
+  data      Json? // Additional notification data
+  isRead    Boolean          @default(false)
   sentAt    DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
 
   // Relations
   user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -270,16 +272,16 @@ model Notification {
 }
 
 model UserFcmToken {
-  id          String   @id @default(cuid())
-  userId      String
-  fcmToken    String   @unique
-  deviceInfo  String?  // Browser/Device info
-  userAgent   String?
-  ipAddress   String?
-  isActive    Boolean  @default(true)
-  lastUsedAt  DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String    @id @default(cuid())
+  userId     String
+  fcmToken   String    @unique
+  deviceInfo String? // Browser/Device info
+  userAgent  String?
+  ipAddress  String?
+  isActive   Boolean   @default(true)
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   // Relations
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -289,15 +291,15 @@ model UserFcmToken {
 }
 
 model NotificationTemplate {
-  id        String   @id @default(cuid())
-  name      String   @unique
+  id        String           @id @default(cuid())
+  name      String           @unique
   title     String
   message   String
   type      NotificationType
-  variables Json?    // Template variables
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  variables Json? // Template variables
+  isActive  Boolean          @default(true)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
 
   @@map("notification_templates")
 }

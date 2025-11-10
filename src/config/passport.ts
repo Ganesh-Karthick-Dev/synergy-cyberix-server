@@ -331,22 +331,110 @@ if (config.github) {
       const { id, username, displayName, emails, photos } = profile;
       const email = emails?.[0]?.value?.toLowerCase();
       
+      console.log('🟣 [Passport GitHub Strategy] Processing profile:', {
+        githubId: id,
+        email,
+        username,
+        displayName,
+      });
+
       if (!email) {
         console.error('🟣 [Passport GitHub Strategy] No email found in GitHub profile');
         return done(new Error('No email found in GitHub profile'), false);
       }
 
-      // Return user with access token for GitHub API access
+      // Check if user exists by email or githubId
+      console.log('🟣 [Passport GitHub Strategy] Checking for existing user...');
+      let user = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { email },
+            { githubId: id.toString() }
+          ]
+        }
+      });
+      console.log('🟣 [Passport GitHub Strategy] User found:', user ? {
+        id: user.id,
+        email: user.email,
+        githubId: user.githubId,
+      } : 'None - will create new user');
+
+      if (user) {
+        console.log('🟣 [Passport GitHub Strategy] Updating existing user...');
+        // Update existing user with GitHub ID if not already set
+        if (!user.githubId) {
+          console.log('🟣 [Passport GitHub Strategy] Linking GitHub ID to existing user');
+          user = await prisma.user.update({
+            where: { id: user.id },
+            data: { 
+              githubId: id.toString(),
+              githubAccessToken: accessToken, // Store GitHub access token
+              emailVerified: true,
+              avatar: photos?.[0]?.value || user.avatar,
+              firstName: displayName?.split(' ')[0] || user.firstName,
+              lastName: displayName?.split(' ').slice(1).join(' ') || user.lastName
+            }
+          });
+        } else {
+          console.log('🟣 [Passport GitHub Strategy] Updating user profile info and access token');
+          // Update avatar, name, and access token
+          user = await prisma.user.update({
+            where: { id: user.id },
+            data: {
+              githubAccessToken: accessToken, // Update GitHub access token
+              avatar: photos?.[0]?.value || user.avatar,
+              firstName: displayName?.split(' ')[0] || user.firstName,
+              lastName: displayName?.split(' ').slice(1).join(' ') || user.lastName,
+              emailVerified: true
+            }
+          });
+        }
+        console.log('🟣 [Passport GitHub Strategy] User updated successfully');
+      } else {
+        // Create new user
+        console.log('🟣 [Passport GitHub Strategy] Creating new user...');
+        const [firstName, ...lastNameParts] = displayName?.split(' ') || [];
+        user = await prisma.user.create({
+          data: {
+            email,
+            githubId: id.toString(),
+            githubAccessToken: accessToken, // Store GitHub access token
+            username: username || email.split('@')[0],
+            firstName,
+            lastName: lastNameParts.join(' ') || null,
+            avatar: photos?.[0]?.value || null,
+            emailVerified: true,
+            status: 'ACTIVE',
+            role: 'USER'
+          }
+        });
+        console.log('🟣 [Passport GitHub Strategy] New user created:', user.id);
+      }
+
+      console.log('🟣 [Passport GitHub Strategy] Final user status:', {
+        id: user.id,
+        email: user.email,
+        status: user.status,
+      });
+
+      if (!user || user.status !== 'ACTIVE') {
+        console.error('🟣 [Passport GitHub Strategy] Account is not active');
+        return done(new Error('Account is not active'), false);
+      }
+
+      // Return user in the format expected by the system
       const userPayload = {
-        id: id.toString(),
-        username: username,
-        email: email,
-        displayName: displayName || username,
-        avatar: photos?.[0]?.value || null,
-        accessToken: accessToken, // Include access token for GitHub API calls
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        role: user.role,
+        status: user.status,
+        isActive: user.status === 'ACTIVE',
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt
       };
 
-      console.log('🟣 [Passport GitHub Strategy] Returning user payload with access token');
+      console.log('🟣 [Passport GitHub Strategy] Returning user payload to callback');
       return done(null, userPayload as any);
     } catch (error: any) {
       console.error('🟣 [Passport GitHub Strategy] Error:', {

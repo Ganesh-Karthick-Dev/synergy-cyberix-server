@@ -152,7 +152,8 @@ const githubClientSecret = process.env.GITHUB_CLIENT_SECRET?.trim();
 
 if (githubClientId && githubClientSecret && githubClientId.length > 0 && githubClientSecret.length > 0) {
   const backendUrl = process.env.BACKEND_URL || `http://localhost:${config.port}`;
-  const callbackUrl = process.env.GITHUB_CALLBACK_URL?.trim() || `${backendUrl}/api/github/callback`;
+  // Use /api/auth/github/callback for web OAuth (not /api/github/callback)
+  const callbackUrl = process.env.GITHUB_CALLBACK_URL?.trim() || `${backendUrl}/api/auth/github/callback`;
   
   config.github = {
     clientId: githubClientId,
@@ -163,6 +164,7 @@ if (githubClientId && githubClientSecret && githubClientId.length > 0 && githubC
   // Log configuration status (only client ID prefix for security)
   console.log('✅ GitHub OAuth configured');
   console.log('   Callback URL:', callbackUrl);
+  console.log('   ⚠️  Make sure this URL is registered in your GitHub OAuth App settings!');
 } else {
   // Log missing configuration
   console.warn('⚠️  GitHub OAuth not configured.');
