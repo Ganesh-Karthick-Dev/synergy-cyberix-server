@@ -121,15 +121,18 @@ class Server {
     container.autoRegister(FcmController);
     container.autoRegister(GitHubController);
 
-    // Health check endpoint
-    this.app.get('/health', (req, res) => {
+    // Health check endpoints (both /health and /api/health for compatibility)
+    const healthCheckHandler = (req: express.Request, res: express.Response) => {
       res.status(200).json({
         status: 'OK',
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
         environment: config.nodeEnv
       });
-    });
+    };
+    
+    this.app.get('/health', healthCheckHandler);
+    this.app.get('/api/health', healthCheckHandler);
 
     // API routes using decorators
     const apiRoutes = RouteFactory.createRoutes([

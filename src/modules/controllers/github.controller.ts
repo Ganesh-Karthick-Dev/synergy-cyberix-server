@@ -228,14 +228,12 @@ export class GitHubController {
 
       if (!githubToken) {
         res.status(401).json({
-        res.status(401).json({
           success: false,
           error: {
             message: 'GitHub access token is required',
             statusCode: 401,
           },
         });
-        return;
         return;
       }
 
@@ -288,22 +286,10 @@ export class GitHubController {
 
       if (!githubToken) {
         res.status(401).json({
-        res.status(401).json({
           success: false,
           error: {
             message: 'GitHub access token is required',
             statusCode: 401,
-          },
-        });
-        return;
-      }
-
-      if (!org) {
-        res.status(400).json({
-          success: false,
-          error: {
-            message: 'Organization name is required',
-            statusCode: 400,
           },
         });
         return;
@@ -361,22 +347,10 @@ export class GitHubController {
 
       if (!githubToken) {
         res.status(401).json({
-        res.status(401).json({
           success: false,
           error: {
             message: 'GitHub access token is required',
             statusCode: 401,
-          },
-        });
-        return;
-      }
-
-      if (!owner || !repo) {
-        res.status(400).json({
-          success: false,
-          error: {
-            message: 'Owner and repository name are required',
-            statusCode: 400,
           },
         });
         return;
@@ -437,22 +411,10 @@ export class GitHubController {
 
       if (!githubToken) {
         res.status(401).json({
-        res.status(401).json({
           success: false,
           error: {
             message: 'GitHub access token is required',
             statusCode: 401,
-          },
-        });
-        return;
-      }
-
-      if (!owner || !repo) {
-        res.status(400).json({
-          success: false,
-          error: {
-            message: 'Owner and repository name are required',
-            statusCode: 400,
           },
         });
         return;
@@ -494,14 +456,12 @@ export class GitHubController {
 
       if (!githubToken) {
         res.status(401).json({
-        res.status(401).json({
           success: false,
           error: {
             message: 'GitHub access token is required',
             statusCode: 401,
           },
         });
-        return;
         return;
       }
 

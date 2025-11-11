@@ -32,7 +32,7 @@ export class AuthController {
     body('email').isEmail().withMessage('Please provide a valid email'),
     body('password').notEmpty().withMessage('Password is required')
   ])
-  async login(req: Request, res: Response): Promise<void> {
+  async login(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { email, password, deviceInfo } = req.body;
 
@@ -197,8 +197,8 @@ export class AuthController {
       });
       res.json(response);
     } catch (error) {
-      // Let CustomError bubble up to global error middleware
-      throw error;
+      // Pass error to Express error middleware
+      next(error);
     }
   }
 
