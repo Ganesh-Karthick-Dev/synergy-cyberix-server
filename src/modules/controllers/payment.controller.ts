@@ -1,18 +1,24 @@
 import { Request, Response } from 'express';
 import { Controller, Post, Get } from '../../decorators/controller.decorator';
+import { Use } from '../../decorators/middleware.decorator';
 import { Validate } from '../../decorators/validation.decorator';
 import { Service } from '../../decorators/service.decorator';
 import { ApiResponse } from '../../types';
 import { body } from 'express-validator';
 import { RazorpayService } from '../services/razorpay.service';
+import { InvoiceService } from '../services/invoice.service';
+import { authenticate } from '../../middlewares/auth.middleware';
+import { prisma } from '../../config/db';
 
 @Service()
 @Controller('/api/payments')
 export class PaymentController {
   private razorpayService: RazorpayService;
+  private invoiceService: InvoiceService;
 
   constructor() {
     this.razorpayService = new RazorpayService();
+    this.invoiceService = new InvoiceService();
   }
 
   /**
@@ -90,13 +96,13 @@ export class PaymentController {
     try {
       const { razorpayOrderId, razorpayPaymentId, razorpaySignature } = req.body;
 
-      const isVerified = await this.razorpayService.verifyPayment({
+      const verificationResult = await this.razorpayService.verifyPayment({
         razorpayOrderId,
         razorpayPaymentId,
         razorpaySignature
       });
 
-      if (!isVerified) {
+      if (!verificationResult.verified) {
         res.status(400).json({
           success: false,
           error: {
@@ -109,7 +115,10 @@ export class PaymentController {
 
       const response: ApiResponse = {
         success: true,
-        data: { verified: true },
+        data: {
+          verified: true,
+          paymentId: verificationResult.paymentId
+        },
         message: 'Payment verified successfully'
       };
 
@@ -281,6 +290,86 @@ export class PaymentController {
         success: false,
         error: {
           message: error.message || 'Failed to refund payment',
+          statusCode
+        }
+      });
+    }
+  }
+
+  @Get('/invoice/:paymentId')
+  @Use(authenticate)
+  async downloadInvoice(req: Request, res: Response): Promise<void> {
+    try {
+      const { paymentId } = req.params;
+      const userId = req.user?.id;
+
+      if (!paymentId) {
+        res.status(400).json({
+          success: false,
+          error: {
+            message: 'Payment ID is required',
+            statusCode: 400
+          }
+        });
+        return;
+      }
+
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          error: {
+            message: 'User not authenticated',
+            statusCode: 401
+          }
+        });
+        return;
+      }
+
+      // Verify that the payment belongs to the authenticated user
+      const payment = await prisma.payment.findUnique({
+        where: { id: paymentId },
+        select: { userId: true }
+      });
+
+      if (!payment) {
+        res.status(404).json({
+          success: false,
+          error: {
+            message: 'Payment not found',
+            statusCode: 404
+          }
+        });
+        return;
+      }
+
+      if (payment.userId !== userId) {
+        res.status(403).json({
+          success: false,
+          error: {
+            message: 'Access denied',
+            statusCode: 403
+          }
+        });
+        return;
+      }
+
+      // Generate invoice
+      const { buffer, filename } = await this.invoiceService.getInvoice(paymentId);
+
+      // Set response headers for PDF download
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Length', buffer.length);
+
+      // Send the PDF buffer
+      res.send(buffer);
+
+    } catch (error: any) {
+      const statusCode = error.statusCode || 500;
+      res.status(statusCode).json({
+        success: false,
+        error: {
+          message: error.message || 'Failed to generate invoice',
           statusCode
         }
       });

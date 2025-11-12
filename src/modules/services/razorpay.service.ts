@@ -165,7 +165,7 @@ export class RazorpayService {
   /**
    * Verify payment signature and update payment status
    */
-  async verifyPayment(verificationData: VerifyPaymentData): Promise<boolean> {
+  async verifyPayment(verificationData: VerifyPaymentData): Promise<{ verified: boolean; paymentId?: string }> {
     try {
       // Create signature to verify
       const sign = verificationData.razorpayOrderId + '|' + verificationData.razorpayPaymentId;
@@ -177,7 +177,7 @@ export class RazorpayService {
       // Verify signature
       if (expectedSign !== verificationData.razorpaySignature) {
         logger.warn(`Payment verification failed: Invalid signature for order ${verificationData.razorpayOrderId}`);
-        return false;
+        return { verified: false };
       }
 
       // Get payment details from Razorpay
@@ -191,7 +191,7 @@ export class RazorpayService {
 
       if (!paymentOrder) {
         logger.error(`Payment order not found for Razorpay order ID: ${verificationData.razorpayOrderId}`);
-        return false;
+        return { verified: false };
       }
 
       // Update payment order status
@@ -203,8 +203,9 @@ export class RazorpayService {
       });
 
       // Create payment record (with error handling for missing tables)
+      let paymentRecord = null;
       try {
-        await prisma.payment.create({
+        paymentRecord = await prisma.payment.create({
           data: {
             orderId: paymentOrder.id,
             userId: paymentOrder.userId,
@@ -225,7 +226,7 @@ export class RazorpayService {
             paidAt: paymentDetails.created_at ? new Date(paymentDetails.created_at * 1000) : null
           }
         });
-        console.log('[Razorpay Service] ✅ Payment record saved to database');
+        console.log('[Razorpay Service] ✅ Payment record saved to database:', paymentRecord.id);
       } catch (dbError: any) {
         console.warn('[Razorpay Service] ⚠️  Payment database save failed (tables may not exist yet):', dbError.message);
         console.warn('[Razorpay Service] Payment verification successful, but not saved to database');
@@ -243,7 +244,7 @@ export class RazorpayService {
       }
 
       logger.info(`Payment verified successfully: ${verificationData.razorpayPaymentId} for order ${verificationData.razorpayOrderId}`);
-      return true;
+      return { verified: true, paymentId: paymentRecord?.id };
     } catch (error: any) {
       logger.error('Error verifying payment:', error);
       throw new CustomError('Failed to verify payment', 500);

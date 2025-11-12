@@ -27,6 +27,7 @@ import { AdsController } from './modules/controllers/ads.controller';
 import { FcmController } from './modules/controllers/fcm.controller';
 import { GitHubController } from './modules/controllers/github.controller';
 import { PaymentController } from './modules/controllers/payment.controller';
+import { InvoiceService } from './modules/services/invoice.service';
 import { UserService } from './modules/services/user.service';
 import { EmailService } from './modules/services/email.service';
 import { AuthService } from './modules/services/auth.service';
@@ -110,6 +111,7 @@ class Server {
     container.autoRegister(EmailService);
     container.autoRegister(AuthService);
     container.autoRegister(UserService);
+    container.autoRegister(InvoiceService);
     container.autoRegister(RegistrationController);
     container.autoRegister(AuthController);
     container.autoRegister(AdminController);
