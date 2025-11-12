@@ -26,6 +26,7 @@ import { NotificationsController } from './modules/controllers/notifications.con
 import { AdsController } from './modules/controllers/ads.controller';
 import { FcmController } from './modules/controllers/fcm.controller';
 import { GitHubController } from './modules/controllers/github.controller';
+import { PaymentController } from './modules/controllers/payment.controller';
 import { UserService } from './modules/services/user.service';
 import { EmailService } from './modules/services/email.service';
 import { AuthService } from './modules/services/auth.service';
@@ -120,6 +121,7 @@ class Server {
     container.autoRegister(AdsController);
     container.autoRegister(FcmController);
     container.autoRegister(GitHubController);
+    container.autoRegister(PaymentController);
 
     // Health check endpoints (both /health and /api/health for compatibility)
     const healthCheckHandler = (req: express.Request, res: express.Response) => {
@@ -142,6 +144,7 @@ class Server {
       DashboardController,
       UsersController,
       PlanController,
+      PaymentController,
       SecurityToolsController,
       NotificationsController,
       AdsController,

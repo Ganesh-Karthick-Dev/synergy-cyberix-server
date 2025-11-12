@@ -2,9 +2,11 @@ import { Request, Response } from 'express';
 import { Controller, Get, Post, Put, Delete } from '../../decorators/controller.decorator';
 import { Validate } from '../../decorators/validation.decorator';
 import { Service } from '../../decorators/service.decorator';
+import { Use } from '../../decorators/middleware.decorator';
 import { ApiResponse } from '../../types';
 import { body } from 'express-validator';
 import { PlanService } from '../services/plan.service';
+import { authenticate } from '../../middlewares/auth.middleware';
 
 @Service()
 @Controller('/api/plans')
@@ -205,6 +207,99 @@ export class PlanController {
         success: false,
         error: {
           message: error.message || 'Failed to update plan status',
+          statusCode
+        }
+      });
+    }
+  }
+
+  /**
+   * Create payment order for a plan
+   */
+  @Use(authenticate)
+  @Post('/:id/payment-order')
+  async createPlanPaymentOrder(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const userId = req.user?.id;
+
+      if (!id) {
+        res.status(400).json({
+          success: false,
+          error: {
+            message: 'Plan ID is required',
+            statusCode: 400
+          }
+        });
+        return;
+      }
+
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          error: {
+            message: 'User not authenticated',
+            statusCode: 401
+          }
+        });
+        return;
+      }
+
+      const paymentOrder = await this.planService.createPlanPaymentOrder(id, userId);
+
+      const response: ApiResponse = {
+        success: true,
+        data: paymentOrder,
+        message: 'Payment order created successfully'
+      };
+
+      res.json(response);
+    } catch (error: any) {
+      const statusCode = error.statusCode || 500;
+      res.status(statusCode).json({
+        success: false,
+        error: {
+          message: error.message || 'Failed to create payment order',
+          statusCode
+        }
+      });
+    }
+  }
+
+  /**
+   * Get user's active subscription
+   */
+  @Get('/subscription/active')
+  async getUserActiveSubscription(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          error: {
+            message: 'User not authenticated',
+            statusCode: 401
+          }
+        });
+        return;
+      }
+
+      const subscription = await this.planService.getUserActiveSubscription(userId);
+
+      const response: ApiResponse = {
+        success: true,
+        data: subscription,
+        message: subscription ? 'Active subscription retrieved successfully' : 'No active subscription found'
+      };
+
+      res.json(response);
+    } catch (error: any) {
+      const statusCode = error.statusCode || 500;
+      res.status(statusCode).json({
+        success: false,
+        error: {
+          message: error.message || 'Failed to retrieve active subscription',
           statusCode
         }
       });

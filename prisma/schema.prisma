@@ -35,6 +35,8 @@ model User {
   // Relations
   sessions        Session[]
   subscriptions   UserSubscription[]
+  paymentOrders   PaymentOrder[]
+  payments        Payment[]
   securityReports SecurityReport[]
   notifications   Notification[]
   loginLogs       LoginLog[]
@@ -93,6 +95,59 @@ model LoginBlock {
   @@map("login_blocks")
 }
 
+// ==================== PAYMENTS ====================
+
+model PaymentOrder {
+  id            String          @id @default(cuid())
+  userId        String
+  planId        String?
+  amount        Decimal         @db.Decimal(10, 2)
+  currency      String          @default("INR")
+  razorpayOrderId String?       @unique // Razorpay order ID
+  status        PaymentStatus   @default(PENDING)
+  description   String?
+  metadata      Json? // Additional payment data
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  // Relations
+  user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan ServicePlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
+  payments Payment[]
+
+  @@map("payment_orders")
+}
+
+model Payment {
+  id                String          @id @default(cuid())
+  orderId           String
+  userId            String
+  razorpayPaymentId String          @unique // Razorpay payment ID
+  razorpayOrderId   String? // Razorpay order ID for reference
+  razorpaySignature String? // Razorpay signature for verification
+  amount            Decimal         @db.Decimal(10, 2)
+  currency          String          @default("INR")
+  status            PaymentStatus   @default(PENDING)
+  method            String? // Payment method (card, netbanking, etc.)
+  bank              String? // Bank name
+  wallet            String? // Wallet name
+  vpa               String? // UPI VPA
+  email             String? // Customer email
+  contact           String? // Customer contact
+  fee               Decimal?        @db.Decimal(10, 2) // Razorpay fee
+  tax               Decimal?        @db.Decimal(10, 2) // Razorpay tax
+  metadata          Json? // Additional payment data
+  paidAt            DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  // Relations
+  order PaymentOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("payments")
+}
+
 // ==================== SERVICE PLANS ====================
 
 model ServicePlan {
@@ -113,6 +168,7 @@ model ServicePlan {
 
   // Relations
   subscriptions UserSubscription[]
+  paymentOrders PaymentOrder[]
 
   @@map("service_plans")
 }
@@ -360,6 +416,14 @@ enum SubscriptionStatus {
   CANCELLED
   EXPIRED
   PENDING
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  CANCELLED
+  REFUNDED
 }
 
 enum SecurityCategory {

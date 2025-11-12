@@ -52,6 +52,10 @@ interface Config {
     callbackURL: string;
   };
   frontendUrl: string;
+  razorpay?: {
+    keyId: string;
+    keySecret: string;
+  };
 }
 
 const config: Config = {
@@ -170,6 +174,23 @@ if (githubClientId && githubClientSecret && githubClientId.length > 0 && githubC
   console.warn('⚠️  GitHub OAuth not configured.');
   console.warn('   GITHUB_CLIENT_ID:', githubClientId ? `${githubClientId.substring(0, 20)}...` : 'not set');
   console.warn('   GITHUB_CLIENT_SECRET:', githubClientSecret ? 'set' : 'not set');
+}
+
+// Add Razorpay configuration if provided
+const razorpayKeyId = process.env.RAZORPAY_KEY_ID?.trim();
+const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET?.trim();
+
+if (razorpayKeyId && razorpayKeySecret && razorpayKeyId.length > 0 && razorpayKeySecret.length > 0) {
+  config.razorpay = {
+    keyId: razorpayKeyId,
+    keySecret: razorpayKeySecret
+  };
+
+  console.log('✅ Razorpay payment gateway configured');
+} else {
+  console.warn('⚠️  Razorpay not configured.');
+  console.warn('   RAZORPAY_KEY_ID:', razorpayKeyId ? 'set' : 'not set');
+  console.warn('   RAZORPAY_KEY_SECRET:', razorpayKeySecret ? 'set' : 'not set');
 }
 
 export { config };

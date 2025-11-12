@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { CONTROLLER_METADATA_KEY, ROUTE_METADATA_KEY } from '../decorators/controller.decorator';
 import { VALIDATION_METADATA_KEY } from '../decorators/validation.decorator';
+import { MIDDLEWARE_METADATA_KEY } from '../decorators/middleware.decorator';
 import { container } from '../container/container';
 import { validate } from '../middlewares/validation.middleware';
 
@@ -24,12 +25,16 @@ export class RouteFactory {
         if (!routeMetadata) return;
 
         const validationMetadata = Reflect.getMetadata(VALIDATION_METADATA_KEY, ControllerClass.prototype, methodName);
-        
+        const middlewareMetadata = Reflect.getMetadata(MIDDLEWARE_METADATA_KEY, ControllerClass.prototype[methodName]);
+
         const fullPath = controllerPath + routeMetadata.path;
         const handler = controllerInstance[methodName].bind(controllerInstance);
-        
+
         // Combine middleware
         const middleware = [...(routeMetadata.middleware || [])];
+        if (middlewareMetadata) {
+          middleware.push(...middlewareMetadata);
+        }
         if (validationMetadata) {
           middleware.push(validate(validationMetadata.rules));
         }

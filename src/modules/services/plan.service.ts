@@ -3,9 +3,16 @@ import { CustomError } from '../../middlewares/error.middleware';
 import { logger } from '../../utils/logger';
 import { Service } from '../../decorators/service.decorator';
 import { Prisma } from '@prisma/client';
+import { RazorpayService } from './razorpay.service';
 
 @Service()
 export class PlanService {
+  private razorpayService: RazorpayService;
+
+  constructor() {
+    this.razorpayService = new RazorpayService();
+  }
+
   /**
    * Get all plans with optional filters
    */
@@ -264,9 +271,127 @@ export class PlanService {
   }
 
   /**
+   * Create payment order for a plan
+   */
+  async createPlanPaymentOrder(planId: string, userId: string) {
+    try {
+      console.log('[Plan Service] ===== CREATING PLAN PAYMENT ORDER =====')
+      console.log('[Plan Service] Plan ID:', planId)
+      console.log('[Plan Service] User ID:', userId)
+
+      // Get plan details
+      console.log('[Plan Service] Fetching plan details...')
+      const plan = await this.getPlanById(planId);
+      console.log('[Plan Service] Plan details:', {
+        id: plan.id,
+        name: plan.name,
+        price: plan.price,
+        currency: (plan as any).currency || 'USD',
+        isActive: plan.isActive
+      })
+
+      if (!plan.isActive) {
+        console.log('[Plan Service] ❌ Plan is not active')
+        throw new CustomError('Plan is not active', 400);
+      }
+
+      // Convert price to paise (Razorpay expects amount in smallest currency unit)
+      const amountInPaise = Math.round(plan.price * 100);
+      console.log('[Plan Service] Amount conversion:', {
+        planPrice: plan.price,
+        amountInPaise: amountInPaise,
+        calculation: `${plan.price} * 100 = ${amountInPaise}`
+      })
+
+      // Generate a shorter receipt (Razorpay limit: 40 chars max)
+      const timestamp = Date.now().toString().slice(-8) // Last 8 digits of timestamp
+      const shortPlanId = planId.slice(-8) // Last 8 chars of plan ID
+      const receipt = `p_${shortPlanId}_${timestamp}` // Max ~20 chars
+
+      const orderData = {
+        amount: amountInPaise,
+        currency: 'INR',
+        userId,
+        planId,
+        receipt,
+        notes: {
+          description: `Subscription to ${plan.name} plan`,
+          planId,
+          userId,
+          planName: plan.name
+        }
+      };
+
+      console.log('[Plan Service] Order data prepared:', orderData)
+      console.log('[Plan Service] Calling Razorpay service...')
+
+      const paymentOrder = await this.razorpayService.createOrder(orderData);
+
+      logger.info(`Payment order created for plan ${planId} by user ${userId}`);
+
+      console.log('[Plan Service] Preparing response...')
+      const transformedPlan = this.transformPlanForPayment(plan);
+      console.log('[Plan Service] Plan transformed successfully')
+
+      const response = {
+        ...paymentOrder,
+        plan: transformedPlan
+      };
+      console.log('[Plan Service] Response prepared:', {
+        paymentOrderId: paymentOrder.id,
+        razorpayOrderId: paymentOrder.razorpayOrderId,
+        planId: transformedPlan.id,
+        planName: transformedPlan.name
+      });
+
+      return response;
+    } catch (error) {
+      if (error instanceof CustomError) {
+        throw error;
+      }
+      logger.error('Error creating plan payment order:', error);
+      throw new CustomError('Failed to create payment order for plan', 500);
+    }
+  }
+
+  /**
+   * Get user's active subscription
+   */
+  async getUserActiveSubscription(userId: string) {
+    try {
+      const subscription = await prisma.userSubscription.findFirst({
+        where: {
+          userId,
+          status: 'ACTIVE',
+          endDate: {
+            gt: new Date()
+          }
+        },
+        include: {
+          plan: true
+        }
+      });
+
+      return subscription;
+    } catch (error) {
+      logger.error('Error fetching user active subscription:', error);
+      throw new CustomError('Failed to retrieve active subscription', 500);
+    }
+  }
+
+  /**
    * Transform database plan to API format
    */
   private transformPlan(plan: any) {
+    console.log('[Plan Service] Transforming plan object:', {
+      id: plan.id,
+      name: plan.name,
+      price: plan.price,
+      hasFeatures: !!plan.features,
+      hasCreatedAt: !!plan.createdAt,
+      hasUpdatedAt: !!plan.updatedAt
+    });
+
     // Extract features array from JSON
     let featuresArray: string[] = [];
     if (plan.features) {
@@ -280,7 +405,19 @@ export class PlanService {
       }
     }
 
-    return {
+    // Safely handle date fields
+    const formatDate = (date: any) => {
+      if (!date) return null;
+      try {
+        const d = new Date(date);
+        return d.toISOString().split('T')[0];
+      } catch (error) {
+        console.warn('[Plan Service] Invalid date format:', date);
+        return null;
+      }
+    };
+
+    const result = {
       id: plan.id,
       name: plan.name,
       price: parseFloat(plan.price.toString()),
@@ -288,10 +425,50 @@ export class PlanService {
       features: featuresArray,
       deliveryDays: plan.deliveryDays || 0,
       isPopular: plan.isPopular || false,
-      isActive: plan.isActive,
-      createdAt: plan.createdAt.toISOString().split('T')[0],
-      updatedAt: plan.updatedAt.toISOString().split('T')[0],
+      isActive: plan.isActive || true,
+      createdAt: formatDate(plan.createdAt),
+      updatedAt: formatDate(plan.updatedAt),
     };
+
+    console.log('[Plan Service] Plan transformation result:', result);
+    return result;
+  }
+
+  /**
+   * Transform database plan to payment order format (minimal fields)
+   */
+  private transformPlanForPayment(plan: any) {
+    console.log('[Plan Service] Transforming plan for payment:', {
+      id: plan.id,
+      name: plan.name,
+      price: plan.price
+    });
+
+    // Extract features array from JSON
+    let featuresArray: string[] = [];
+    if (plan.features) {
+      if (Array.isArray(plan.features)) {
+        featuresArray = plan.features;
+      } else if (plan.features.featuresList && Array.isArray(plan.features.featuresList)) {
+        featuresArray = plan.features.featuresList;
+      } else if (typeof plan.features === 'object') {
+        // Convert object keys to feature strings
+        featuresArray = Object.keys(plan.features).filter(key => plan.features[key] === true);
+      }
+    }
+
+    // Return only the fields needed by the frontend PaymentOrder interface
+    const result = {
+      id: plan.id,
+      name: plan.name,
+      price: parseFloat(plan.price.toString()),
+      description: plan.description || '',
+      features: featuresArray,
+      isPopular: plan.isPopular || false,
+    };
+
+    console.log('[Plan Service] Payment plan transformation result:', result);
+    return result;
   }
 }
 

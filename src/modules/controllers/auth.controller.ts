@@ -129,7 +129,10 @@ export class AuthController {
     }
 
     // Set cookies for tokens (backend handles ALL cookie management)
-    // Don't set domain - allows cookies to work for same hostname (localhost) with different ports
+    // Set both HTTP-only and readable cookies for maximum compatibility
+    // HTTP-only for security, readable for client-side access (needed for API proxy routes)
+
+    // HTTP-only cookie (secure, cannot be read by JavaScript)
     res.cookie('accessToken', tokens.accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -138,7 +141,17 @@ export class AuthController {
       path: '/', // Ensure cookies are available for all paths
       // Don't set domain - allow cross-origin
     });
-    console.log('🟢 [Login] Set accessToken cookie');
+    console.log('🟢 [Login] Set HTTP-only accessToken cookie');
+
+    // Readable cookie (for client-side access, less secure but needed for API routes)
+    res.cookie('accessToken', tokens.accessToken, {
+      httpOnly: false, // Allow client-side reading
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      path: '/', // Ensure cookies are available for all paths
+    });
+    console.log('🟢 [Login] Set readable accessToken cookie');
 
     res.cookie('refreshToken', tokens.refreshToken, {
       httpOnly: true,
@@ -295,7 +308,9 @@ export class AuthController {
       const tokens = await this.authService.refreshTokens(refreshToken);
 
       // Set new cookies (backend handles ALL cookie management)
-      // Don't set domain - allows cookies to work for same hostname (localhost) with different ports
+      // Set both HTTP-only and readable cookies for maximum compatibility
+
+      // HTTP-only cookie (secure)
       res.cookie('accessToken', tokens.accessToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
@@ -303,6 +318,15 @@ export class AuthController {
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
         path: '/',
         // Don't set domain - browsers will use current hostname
+      });
+
+      // Readable cookie (for client-side access)
+      res.cookie('accessToken', tokens.accessToken, {
+        httpOnly: false,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        path: '/',
       });
 
       res.cookie('refreshToken', tokens.refreshToken, {
@@ -1203,19 +1227,30 @@ export class AuthController {
           req.get('User-Agent') || ''
         );
 
-        // Set cookies
-        const cookieOptions = {
+        // Set cookies - both HTTP-only and readable for compatibility
+        const httpOnlyCookieOptions = {
           httpOnly: true,
           secure: process.env.NODE_ENV === 'production',
           sameSite: (process.env.NODE_ENV === 'production' ? 'strict' : 'lax') as 'strict' | 'lax',
           maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
           path: '/',
         };
-        
-        res.cookie('accessToken', tokens.accessToken, cookieOptions);
+
+        const readableCookieOptions = {
+          httpOnly: false,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: (process.env.NODE_ENV === 'production' ? 'strict' : 'lax') as 'strict' | 'lax',
+          maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+          path: '/',
+        };
+
+        // HTTP-only cookie (secure)
+        res.cookie('accessToken', tokens.accessToken, httpOnlyCookieOptions);
+        // Readable cookie (for client-side access)
+        res.cookie('accessToken', tokens.accessToken, readableCookieOptions);
         if (tokens.refreshToken) {
           res.cookie('refreshToken', tokens.refreshToken, {
-            ...cookieOptions,
+            ...httpOnlyCookieOptions,
             maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
           });
         }
@@ -1374,19 +1409,31 @@ export class AuthController {
           domain: 'NOT SET (uses current hostname)',
         });
         
-        const cookieOptions = {
+        const httpOnlyCookieOptions = {
           httpOnly: true,
           secure: process.env.NODE_ENV === 'production',
           sameSite: (process.env.NODE_ENV === 'production' ? 'strict' : 'lax') as 'strict' | 'lax',
           maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
           path: '/',
         };
-        
-        res.cookie('accessToken', tokens.accessToken, cookieOptions);
-        console.log('🟡 [Backend Callback] accessToken cookie set:', {
+
+        const readableCookieOptions = {
+          httpOnly: false,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: (process.env.NODE_ENV === 'production' ? 'strict' : 'lax') as 'strict' | 'lax',
+          maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+          path: '/',
+        };
+
+        // HTTP-only cookie (secure)
+        res.cookie('accessToken', tokens.accessToken, httpOnlyCookieOptions);
+        // Readable cookie (for client-side access)
+        res.cookie('accessToken', tokens.accessToken, readableCookieOptions);
+        console.log('🟡 [Backend Callback] accessToken cookies set:', {
           tokenLength: tokens.accessToken.length,
           tokenPreview: tokens.accessToken.substring(0, 20) + '...',
-          cookieOptions,
+          httpOnlyOptions: httpOnlyCookieOptions,
+          readableOptions: readableCookieOptions,
         });
 
         if (tokens.refreshToken) {
@@ -1585,7 +1632,7 @@ export class AuthController {
 
         // Set cookies with proper settings for persistence and cross-origin
         console.log('🟣 [Backend Callback] Setting cookies...');
-        const cookieOptions = {
+        const httpOnlyCookieOptions = {
           httpOnly: true,
           secure: process.env.NODE_ENV === 'production',
           sameSite: (process.env.NODE_ENV === 'production' ? 'strict' : 'lax') as 'strict' | 'lax',
@@ -1593,9 +1640,20 @@ export class AuthController {
           path: '/',
           // Don't set domain - allows cookies to work for localhost with different ports
         };
-        
-        res.cookie('accessToken', tokens.accessToken, cookieOptions);
-        console.log('🟣 [Backend Callback] accessToken cookie set (persists for 7 days)');
+
+        const readableCookieOptions = {
+          httpOnly: false,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: (process.env.NODE_ENV === 'production' ? 'strict' : 'lax') as 'strict' | 'lax',
+          maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days - persists across app restarts
+          path: '/',
+        };
+
+        // HTTP-only cookie (secure)
+        res.cookie('accessToken', tokens.accessToken, httpOnlyCookieOptions);
+        // Readable cookie (for client-side access)
+        res.cookie('accessToken', tokens.accessToken, readableCookieOptions);
+        console.log('🟣 [Backend Callback] accessToken cookies set (persist for 7 days)');
 
         if (tokens.refreshToken) {
           const refreshCookieOptions = {

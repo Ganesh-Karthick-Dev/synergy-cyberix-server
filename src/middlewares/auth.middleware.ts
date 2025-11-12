@@ -32,14 +32,12 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
   
   // Debug logging - very detailed
   console.log('🔐 [Auth Middleware] ===== AUTHENTICATION CHECK START =====');
-  console.log('🔐 [Auth Middleware] Token source:', tokenSource);
-  console.log('🔐 [Auth Middleware] Request details:', {
-    url: req.url,
-    method: req.method,
-    origin: req.get('origin'),
-    referer: req.get('referer'),
-    host: req.get('host'),
-  });
+  console.log('🔐 [Auth Middleware] Request URL:', req.url);
+  console.log('🔐 [Auth Middleware] Request method:', req.method);
+  console.log('🔐 [Auth Middleware] Origin:', req.get('origin'));
+  console.log('🔐 [Auth Middleware] Referer:', req.get('referer'));
+  console.log('🔐 [Auth Middleware] Host:', req.get('host'));
+  console.log('🔐 [Auth Middleware] User-Agent:', req.get('User-Agent')?.substring(0, 50));
   
   console.log('🔐 [Auth Middleware] All cookies received:', {
     cookieCount: Object.keys(req.cookies).length,
@@ -63,13 +61,25 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
   console.log('🔐 [Auth Middleware] Authorization header:', {
     present: !!authHeader,
     hasBearer: authHeader?.startsWith('Bearer ') || false,
+    length: authHeader?.length || 0,
     preview: authHeader ? authHeader.substring(0, 50) + '...' : 'MISSING',
+  });
+
+  // Log all headers for debugging
+  console.log('🔐 [Auth Middleware] All headers:', {
+    authorization: req.get('authorization'),
+    cookie: req.get('cookie') ? 'PRESENT' : 'MISSING',
+    'user-agent': req.get('user-agent')?.substring(0, 50),
+    referer: req.get('referer'),
   });
   
   if (!accessToken) {
     console.log('❌ [Auth Middleware] ===== AUTHENTICATION FAILED: No accessToken found =====');
     console.log('❌ [Auth Middleware] Available cookies:', Object.keys(req.cookies));
-    console.log('❌ [Auth Middleware] Authorization header:', authHeader ? 'Present' : 'Missing');
+    console.log('❌ [Auth Middleware] Authorization header present:', !!authHeader);
+    console.log('❌ [Auth Middleware] Authorization header value:', authHeader);
+    console.log('❌ [Auth Middleware] Authorization header starts with Bearer:', authHeader?.startsWith('Bearer '));
+    console.log('❌ [Auth Middleware] Token source was:', tokenSource);
     return next(new CustomError('Authentication required', 401));
   }
 
