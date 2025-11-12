@@ -37,6 +37,7 @@ model User {
   subscriptions   UserSubscription[]
   paymentOrders   PaymentOrder[]
   payments        Payment[]
+  projects        Project[]
   securityReports SecurityReport[]
   notifications   Notification[]
   loginLogs       LoginLog[]
@@ -193,6 +194,25 @@ model UserSubscription {
   @@map("user_subscriptions")
 }
 
+// ==================== PROJECTS ====================
+
+model Project {
+  id          String        @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  target      String? // URL or target for scanning
+  status      ProjectStatus @default(ACTIVE)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  // Relations
+  user  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scans SecurityReport[]
+
+  @@map("projects")
+}
+
 // ==================== SECURITY TOOLS ====================
 
 model SecurityTool {
@@ -214,6 +234,7 @@ model SecurityTool {
 model SecurityReport {
   id        String        @id @default(cuid())
   userId    String
+  projectId String? // Link to project (optional for backward compatibility)
   toolId    String
   title     String
   content   String
@@ -224,8 +245,9 @@ model SecurityReport {
   updatedAt DateTime      @updatedAt
 
   // Relations
-  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tool SecurityTool @relation(fields: [toolId], references: [id], onDelete: Cascade)
+  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  tool    SecurityTool @relation(fields: [toolId], references: [id], onDelete: Cascade)
 
   @@map("security_reports")
 }
@@ -448,6 +470,12 @@ enum ReportStatus {
   IN_PROGRESS
   RESOLVED
   CLOSED
+}
+
+enum ProjectStatus {
+  ACTIVE
+  ARCHIVED
+  DELETED
 }
 
 enum CampaignStatus {

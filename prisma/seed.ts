@@ -98,7 +98,9 @@ async function main() {
           basicSecurityScans: true,
           limitedThreatIntelligence: true,
           communitySupport: true,
-          maxScans: 5
+          maxProjects: 1,
+          maxScansPerProject: 1,
+          maxScans: 1
         },
         maxUsers: 1,
         maxStorage: 100 * 1024 * 1024 // 100MB
@@ -117,7 +119,9 @@ async function main() {
           complianceChecking: true,
           advancedReporting: true,
           prioritySupport: true,
-          maxScans: 100
+          maxProjects: 10,
+          maxScansPerProject: -1, // -1 = unlimited
+          maxScans: -1 // -1 = unlimited
         },
         maxUsers: 25,
         maxStorage: 10 * 1024 * 1024 * 1024 // 10GB
@@ -140,6 +144,8 @@ async function main() {
           monitoring: true,
           customReporting: true,
           dedicatedSupport: true,
+          maxProjects: -1, // -1 = unlimited
+          maxScansPerProject: -1, // -1 = unlimited
           unlimitedScans: true
         },
         maxUsers: -1, // Unlimited

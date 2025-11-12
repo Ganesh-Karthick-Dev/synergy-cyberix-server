@@ -9,6 +9,12 @@ import rateLimit from 'express-rate-limit';
 import session from 'express-session';
 import passport from 'passport';
 import { config } from './config/env.config';
+
+// Global BigInt serializer for JSON.stringify
+// This ensures BigInt values are converted to strings when serializing JSON
+(BigInt.prototype as any).toJSON = function() {
+  return this.toString();
+};
 // Import passport config to register strategies
 import './config/passport';
 import { errorHandler } from './middlewares/error.middleware';
@@ -27,7 +33,12 @@ import { AdsController } from './modules/controllers/ads.controller';
 import { FcmController } from './modules/controllers/fcm.controller';
 import { GitHubController } from './modules/controllers/github.controller';
 import { PaymentController } from './modules/controllers/payment.controller';
+import { ProjectController } from './modules/controllers/project.controller';
+import { SecurityReportController } from './modules/controllers/security-report.controller';
 import { InvoiceService } from './modules/services/invoice.service';
+import { PlanRestrictionService } from './modules/services/plan-restriction.service';
+import { ProjectService } from './modules/services/project.service';
+import { SecurityReportService } from './modules/services/security-report.service';
 import { UserService } from './modules/services/user.service';
 import { EmailService } from './modules/services/email.service';
 import { AuthService } from './modules/services/auth.service';
@@ -112,6 +123,9 @@ class Server {
     container.autoRegister(AuthService);
     container.autoRegister(UserService);
     container.autoRegister(InvoiceService);
+    container.autoRegister(PlanRestrictionService);
+    container.autoRegister(ProjectService);
+    container.autoRegister(SecurityReportService);
     container.autoRegister(RegistrationController);
     container.autoRegister(AuthController);
     container.autoRegister(AdminController);
@@ -124,6 +138,8 @@ class Server {
     container.autoRegister(FcmController);
     container.autoRegister(GitHubController);
     container.autoRegister(PaymentController);
+    container.autoRegister(ProjectController);
+    container.autoRegister(SecurityReportController);
 
     // Health check endpoints (both /health and /api/health for compatibility)
     const healthCheckHandler = (req: express.Request, res: express.Response) => {
@@ -147,6 +163,8 @@ class Server {
       UsersController,
       PlanController,
       PaymentController,
+      ProjectController,
+      SecurityReportController,
       SecurityToolsController,
       NotificationsController,
       AdsController,

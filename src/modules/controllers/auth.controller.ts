@@ -194,15 +194,21 @@ export class AuthController {
           email: user.email,
           role: user.role,
           isActive: user.isActive
-        }
+        },
+        // Include token in response body for Electron/desktop app compatibility
+        // Cookies are also set for web browser compatibility
+        token: tokens.accessToken,
+        refreshToken: tokens.refreshToken
       },
       message: 'Login successful. Previous sessions have been invalidated.'
     };
 
-      // Note: Tokens are set as cookies, not included in response body
+      // Note: Tokens are set as cookies AND included in response body for maximum compatibility
+      // Cookies work for web browsers, response body works for Electron/desktop apps
       console.log('🟢 [Login] Response sent, cookies should be set in browser');
+      console.log('🟢 [Login] Token also included in response body for Electron compatibility');
       console.log('🟢 [Login] Cookie settings:', {
-        accessToken: 'Set (httpOnly)',
+        accessToken: 'Set (httpOnly + readable)',
         refreshToken: 'Set (httpOnly)',
         sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
         secure: process.env.NODE_ENV === 'production',
@@ -295,7 +301,13 @@ export class AuthController {
   @Post('/refresh')
   async refresh(req: Request, res: Response): Promise<void> {
     try {
-      const refreshToken = req.cookies.refreshToken;
+      // Try to get refresh token from cookies first, then from request body (for Electron apps)
+      let refreshToken = req.cookies.refreshToken;
+      
+      if (!refreshToken && req.body?.refreshToken) {
+        refreshToken = req.body.refreshToken;
+        console.log('🔄 [Refresh] Using refresh token from request body (Electron compatibility)');
+      }
 
       if (!refreshToken) {
         res.status(401).json({
@@ -340,10 +352,15 @@ export class AuthController {
 
       const response: ApiResponse = {
         success: true,
+        data: {
+          // Include tokens in response body for Electron/desktop app compatibility
+          token: tokens.accessToken,
+          refreshToken: tokens.refreshToken
+        },
         message: 'Tokens refreshed successfully. New cookies have been set.'
       };
       
-      // Note: Tokens are set as cookies, not included in response body
+      // Note: Tokens are set as cookies AND included in response body for Electron compatibility
       res.json(response);
     } catch (error) {
       res.status(401).json({

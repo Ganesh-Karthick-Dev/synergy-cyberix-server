@@ -270,6 +270,7 @@ export class PlanController {
    * Get user's active subscription
    */
   @Get('/subscription/active')
+  @Use(authenticate)
   async getUserActiveSubscription(req: Request, res: Response): Promise<void> {
     try {
       const userId = req.user?.id;

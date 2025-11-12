@@ -1,0 +1,255 @@
+import { prisma } from '../../config/db';
+import { CustomError } from '../../middlewares/error.middleware';
+import { logger } from '../../utils/logger';
+import { Service } from '../../decorators/service.decorator';
+
+export interface PlanLimits {
+  maxProjects: number; // -1 = unlimited
+  maxScansPerProject: number; // -1 = unlimited
+  maxScans: number; // -1 = unlimited
+}
+
+@Service()
+export class PlanRestrictionService {
+  /**
+   * Get user's active subscription and plan limits
+   */
+  async getUserPlanLimits(userId: string): Promise<PlanLimits> {
+    try {
+      // Find active subscription - check status first, then endDate
+      const subscription = await prisma.userSubscription.findFirst({
+        where: {
+          userId,
+          status: 'ACTIVE',
+          OR: [
+            { endDate: null }, // Lifetime plans
+            { endDate: { gt: new Date() } } // Active plans with future endDate
+          ]
+        },
+        include: {
+          plan: true
+        },
+        orderBy: {
+          createdAt: 'desc' // Get the most recent subscription
+        }
+      });
+
+      // If no active subscription, return FREE plan limits
+      if (!subscription || !subscription.plan) {
+        logger.info(`No active subscription found for user ${userId}, using FREE plan limits`);
+        return {
+          maxProjects: 1,
+          maxScansPerProject: 1,
+          maxScans: 1
+        };
+      }
+
+      const features = subscription.plan.features as any;
+      logger.info(`User ${userId} has active ${subscription.plan.name} plan with limits:`, {
+        maxProjects: features.maxProjects,
+        maxScansPerProject: features.maxScansPerProject,
+        maxScans: features.maxScans
+      });
+
+      return {
+        maxProjects: features.maxProjects ?? 1,
+        maxScansPerProject: features.maxScansPerProject ?? 1,
+        maxScans: features.maxScans ?? 1
+      };
+    } catch (error) {
+      logger.error('Error fetching user plan limits:', error);
+      // Return FREE plan limits as fallback
+      return {
+        maxProjects: 1,
+        maxScansPerProject: 1,
+        maxScans: 1
+      };
+    }
+  }
+
+  /**
+   * Check if user can create a new project
+   */
+  async canCreateProject(userId: string): Promise<{ allowed: boolean; reason?: string }> {
+    try {
+      const limits = await this.getUserPlanLimits(userId);
+
+      // Unlimited projects
+      if (limits.maxProjects === -1) {
+        return { allowed: true };
+      }
+
+      // Count active projects
+      const projectCount = await prisma.project.count({
+        where: {
+          userId,
+          status: 'ACTIVE'
+        }
+      });
+
+      if (projectCount >= limits.maxProjects) {
+        return {
+          allowed: false,
+          reason: `You have reached the maximum limit of ${limits.maxProjects} project(s) for your plan. Please upgrade to create more projects.`
+        };
+      }
+
+      return { allowed: true };
+    } catch (error) {
+      logger.error('Error checking project creation limit:', error);
+      return {
+        allowed: false,
+        reason: 'Unable to verify project limit. Please try again.'
+      };
+    }
+  }
+
+  /**
+   * Check if user can run a scan on a project
+   */
+  async canRunScan(userId: string, projectId: string): Promise<{ allowed: boolean; reason?: string }> {
+    try {
+      const limits = await this.getUserPlanLimits(userId);
+
+      // Unlimited scans per project
+      if (limits.maxScansPerProject === -1) {
+        return { allowed: true };
+      }
+
+      // Verify project belongs to user
+      const project = await prisma.project.findFirst({
+        where: {
+          id: projectId,
+          userId,
+          status: 'ACTIVE'
+        }
+      });
+
+      if (!project) {
+        return {
+          allowed: false,
+          reason: 'Project not found or you do not have access to it.'
+        };
+      }
+
+      // Count scans for this project
+      const scanCount = await prisma.securityReport.count({
+        where: {
+          projectId,
+          userId
+        }
+      });
+
+      if (scanCount >= limits.maxScansPerProject) {
+        return {
+          allowed: false,
+          reason: `You have reached the maximum limit of ${limits.maxScansPerProject} scan(s) per project for your plan. Please upgrade to run more scans.`
+        };
+      }
+
+      return { allowed: true };
+    } catch (error) {
+      logger.error('Error checking scan limit:', error);
+      return {
+        allowed: false,
+        reason: 'Unable to verify scan limit. Please try again.'
+      };
+    }
+  }
+
+  /**
+   * Get user's current project count
+   */
+  async getUserProjectCount(userId: string): Promise<number> {
+    try {
+      return await prisma.project.count({
+        where: {
+          userId,
+          status: 'ACTIVE'
+        }
+      });
+    } catch (error) {
+      logger.error('Error counting user projects:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Get project's current scan count
+   */
+  async getProjectScanCount(projectId: string, userId: string): Promise<number> {
+    try {
+      return await prisma.securityReport.count({
+        where: {
+          projectId,
+          userId
+        }
+      });
+    } catch (error) {
+      logger.error('Error counting project scans:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Get user's plan information with usage stats
+   */
+  async getUserPlanInfo(userId: string): Promise<{
+    planName: string;
+    limits: PlanLimits;
+    usage: {
+      projects: number;
+      totalScans: number;
+    };
+  }> {
+    try {
+      // Find active subscription - same logic as getUserPlanLimits
+      const subscription = await prisma.userSubscription.findFirst({
+        where: {
+          userId,
+          status: 'ACTIVE',
+          OR: [
+            { endDate: null }, // Lifetime plans
+            { endDate: { gt: new Date() } } // Active plans with future endDate
+          ]
+        },
+        include: {
+          plan: true
+        },
+        orderBy: {
+          createdAt: 'desc' // Get the most recent subscription
+        }
+      });
+
+      const limits = await this.getUserPlanLimits(userId);
+      const projectCount = await this.getUserProjectCount(userId);
+      const totalScans = await prisma.securityReport.count({
+        where: { userId }
+      });
+
+      // Get plan name from subscription or default to FREE
+      const planName = subscription?.plan?.name || 'FREE';
+      
+      logger.info(`Plan info for user ${userId}:`, {
+        planName,
+        limits,
+        usage: {
+          projects: projectCount,
+          totalScans
+        }
+      });
+
+      return {
+        planName,
+        limits,
+        usage: {
+          projects: projectCount,
+          totalScans
+        }
+      };
+    } catch (error) {
+      logger.error('Error fetching user plan info:', error);
+      throw new CustomError('Failed to fetch plan information', 500);
+    }
+  }
+}

@@ -363,16 +363,51 @@ export class PlanService {
         where: {
           userId,
           status: 'ACTIVE',
-          endDate: {
-            gt: new Date()
-          }
+          OR: [
+            { endDate: null }, // Lifetime plans
+            { endDate: { gt: new Date() } } // Active plans with future endDate
+          ]
         },
         include: {
           plan: true
+        },
+        orderBy: {
+          createdAt: 'desc' // Get the most recent subscription
         }
       });
 
-      return subscription;
+      if (!subscription) {
+        return null;
+      }
+
+      // Transform subscription to ensure BigInt values are serialized correctly
+      return {
+        id: subscription.id,
+        planId: subscription.planId,
+        status: subscription.status,
+        startDate: subscription.startDate,
+        endDate: subscription.endDate,
+        autoRenew: subscription.autoRenew,
+        paymentMethod: subscription.paymentMethod,
+        createdAt: subscription.createdAt,
+        updatedAt: subscription.updatedAt,
+        plan: {
+          id: subscription.plan.id,
+          name: subscription.plan.name,
+          description: subscription.plan.description,
+          price: parseFloat(subscription.plan.price.toString()),
+          currency: subscription.plan.currency,
+          billingCycle: subscription.plan.billingCycle,
+          features: subscription.plan.features,
+          deliveryDays: subscription.plan.deliveryDays,
+          isPopular: subscription.plan.isPopular,
+          isActive: subscription.plan.isActive,
+          maxUsers: subscription.plan.maxUsers,
+          maxStorage: subscription.plan.maxStorage ? subscription.plan.maxStorage.toString() : null, // Convert BigInt to string
+          createdAt: subscription.plan.createdAt,
+          updatedAt: subscription.plan.updatedAt
+        }
+      };
     } catch (error) {
       logger.error('Error fetching user active subscription:', error);
       throw new CustomError('Failed to retrieve active subscription', 500);
