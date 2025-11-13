@@ -236,7 +236,7 @@ export class PlanRestrictionService {
   }
 
   /**
-   * Get user's plan information with usage stats
+   * Get user's plan information with usage stats and validity
    */
   async getUserPlanInfo(userId: string): Promise<{
     planName: string;
@@ -244,6 +244,13 @@ export class PlanRestrictionService {
     usage: {
       projects: number;
       totalScans: number;
+    };
+    validity?: {
+      startDate: string | null;
+      endDate: string | null;
+      billingCycle: string | null;
+      isLifetime: boolean;
+      daysRemaining: number | null;
     };
   }> {
     try {
@@ -274,13 +281,36 @@ export class PlanRestrictionService {
       // Get plan name from subscription or default to FREE
       const planName = subscription?.plan?.name || 'FREE';
       
+      // Calculate validity information
+      let validity = undefined;
+      if (subscription) {
+        const isLifetime = subscription.endDate === null;
+        let daysRemaining: number | null = null;
+        
+        if (!isLifetime && subscription.endDate) {
+          const now = new Date();
+          const endDate = new Date(subscription.endDate);
+          const diff = endDate.getTime() - now.getTime();
+          daysRemaining = Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+        }
+
+        validity = {
+          startDate: subscription.startDate.toISOString(),
+          endDate: subscription.endDate ? subscription.endDate.toISOString() : null,
+          billingCycle: subscription.plan.billingCycle,
+          isLifetime,
+          daysRemaining
+        };
+      }
+      
       logger.info(`Plan info for user ${userId}:`, {
         planName,
         limits,
         usage: {
           projects: projectCount,
           totalScans
-        }
+        },
+        validity
       });
 
       return {
@@ -289,7 +319,8 @@ export class PlanRestrictionService {
         usage: {
           projects: projectCount,
           totalScans
-        }
+        },
+        validity
       };
     } catch (error) {
       logger.error('Error fetching user plan info:', error);

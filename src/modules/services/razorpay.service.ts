@@ -305,22 +305,30 @@ export class RazorpayService {
 
   /**
    * Calculate subscription end date based on billing cycle
+   * Monthly: 31 days
+   * Yearly: 365 days
+   * Lifetime: 100 years (effectively unlimited)
    */
   private calculateEndDate(startDate: Date, billingCycle: string): Date {
     const endDate = new Date(startDate);
+    const millisecondsPerDay = 24 * 60 * 60 * 1000;
 
     switch (billingCycle.toUpperCase()) {
       case 'MONTHLY':
-        endDate.setMonth(endDate.getMonth() + 1);
+        // Add 31 days for monthly plans
+        endDate.setTime(endDate.getTime() + (31 * millisecondsPerDay));
         break;
       case 'YEARLY':
-        endDate.setFullYear(endDate.getFullYear() + 1);
+        // Add 365 days for yearly plans
+        endDate.setTime(endDate.getTime() + (365 * millisecondsPerDay));
         break;
       case 'LIFETIME':
-        endDate.setFullYear(endDate.getFullYear() + 100); // Effectively lifetime
+        // Add 100 years (effectively lifetime)
+        endDate.setFullYear(endDate.getFullYear() + 100);
         break;
       default:
-        endDate.setMonth(endDate.getMonth() + 1); // Default to monthly
+        // Default to 31 days (monthly)
+        endDate.setTime(endDate.getTime() + (31 * millisecondsPerDay));
     }
 
     return endDate;
