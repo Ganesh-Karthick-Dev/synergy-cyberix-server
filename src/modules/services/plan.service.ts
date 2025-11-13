@@ -427,16 +427,33 @@ export class PlanService {
       hasUpdatedAt: !!plan.updatedAt
     });
 
-    // Extract features array from JSON
+    // Extract features array from JSON while preserving maxProjects
     let featuresArray: string[] = [];
+    let maxProjects: number | null = null;
+    let maxScansPerProject: number | null = null;
+    let maxScans: number | null = null;
+    
     if (plan.features) {
       if (Array.isArray(plan.features)) {
         featuresArray = plan.features;
-      } else if (plan.features.featuresList && Array.isArray(plan.features.featuresList)) {
-        featuresArray = plan.features.featuresList;
       } else if (typeof plan.features === 'object') {
-        // Convert object keys to feature strings
-        featuresArray = Object.keys(plan.features).filter(key => plan.features[key] === true);
+        // Extract featuresList if it exists
+        if (plan.features.featuresList && Array.isArray(plan.features.featuresList)) {
+          featuresArray = plan.features.featuresList;
+        } else {
+          // Convert object keys to feature strings (for boolean features)
+          featuresArray = Object.keys(plan.features).filter(
+            key => plan.features[key] === true && 
+            key !== 'maxProjects' && 
+            key !== 'maxScansPerProject' && 
+            key !== 'maxScans'
+          );
+        }
+        
+        // Extract numeric limits
+        maxProjects = plan.features.maxProjects !== undefined ? plan.features.maxProjects : null;
+        maxScansPerProject = plan.features.maxScansPerProject !== undefined ? plan.features.maxScansPerProject : null;
+        maxScans = plan.features.maxScans !== undefined ? plan.features.maxScans : null;
       }
     }
 
@@ -451,6 +468,29 @@ export class PlanService {
         return null;
       }
     };
+
+    // Build features object with both array and limits
+    const featuresObject: any = featuresArray.length > 0 ? featuresArray : [];
+    if (maxProjects !== null || maxScansPerProject !== null || maxScans !== null) {
+      // If we have limits, return as object
+      const result = {
+        id: plan.id,
+        name: plan.name,
+        price: parseFloat(plan.price.toString()),
+        description: plan.description || '',
+        features: featuresArray, // Keep array for backward compatibility
+        maxProjects: maxProjects, // Add maxProjects at root level
+        maxScansPerProject: maxScansPerProject,
+        maxScans: maxScans,
+        deliveryDays: plan.deliveryDays || 0,
+        isPopular: plan.isPopular || false,
+        isActive: plan.isActive || true,
+        createdAt: formatDate(plan.createdAt),
+        updatedAt: formatDate(plan.updatedAt),
+      };
+      console.log('[Plan Service] Plan transformation result with limits:', result);
+      return result;
+    }
 
     const result = {
       id: plan.id,

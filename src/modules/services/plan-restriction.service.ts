@@ -34,23 +34,46 @@ export class PlanRestrictionService {
         }
       });
 
-      // If no active subscription, return FREE plan limits
+      // If no active subscription, fetch FREE plan from database
       if (!subscription || !subscription.plan) {
-        logger.info(`No active subscription found for user ${userId}, using FREE plan limits`);
+        logger.info(`No active subscription found for user ${userId}, fetching FREE plan from database`);
+        
+        // Fetch FREE plan from database
+        const freePlan = await prisma.servicePlan.findUnique({
+          where: { name: 'FREE' }
+        });
+
+        if (!freePlan) {
+          logger.warn('FREE plan not found in database, using default limits');
+          return {
+            maxProjects: 1,
+            maxScansPerProject: 1,
+            maxScans: 1
+          };
+        }
+
+        const freeFeatures = freePlan.features as any;
+        logger.info(`User ${userId} using FREE plan limits from database:`, {
+          maxProjects: freeFeatures.maxProjects,
+          maxScansPerProject: freeFeatures.maxScansPerProject,
+          maxScans: freeFeatures.maxScans
+        });
+
         return {
-          maxProjects: 1,
-          maxScansPerProject: 1,
-          maxScans: 1
+          maxProjects: freeFeatures.maxProjects ?? 1,
+          maxScansPerProject: freeFeatures.maxScansPerProject ?? 1,
+          maxScans: freeFeatures.maxScans ?? 1
         };
       }
 
       const features = subscription.plan.features as any;
-      logger.info(`User ${userId} has active ${subscription.plan.name} plan with limits:`, {
+      logger.info(`User ${userId} has active ${subscription.plan.name} plan with limits from database:`, {
         maxProjects: features.maxProjects,
         maxScansPerProject: features.maxScansPerProject,
         maxScans: features.maxScans
       });
 
+      // Return limits from database, no hardcoded fallbacks
       return {
         maxProjects: features.maxProjects ?? 1,
         maxScansPerProject: features.maxScansPerProject ?? 1,
@@ -58,7 +81,28 @@ export class PlanRestrictionService {
       };
     } catch (error) {
       logger.error('Error fetching user plan limits:', error);
-      // Return FREE plan limits as fallback
+      
+      // Try to fetch FREE plan as last resort fallback
+      try {
+        const freePlan = await prisma.servicePlan.findUnique({
+          where: { name: 'FREE' }
+        });
+
+        if (freePlan) {
+          const freeFeatures = freePlan.features as any;
+          logger.info('Using FREE plan from database as error fallback');
+          return {
+            maxProjects: freeFeatures.maxProjects ?? 1,
+            maxScansPerProject: freeFeatures.maxScansPerProject ?? 1,
+            maxScans: freeFeatures.maxScans ?? 1
+          };
+        }
+      } catch (fallbackError) {
+        logger.error('Error fetching FREE plan as fallback:', fallbackError);
+      }
+
+      // Only use hardcoded values if database is completely unavailable
+      logger.warn('Database unavailable, using hardcoded fallback limits');
       return {
         maxProjects: 1,
         maxScansPerProject: 1,

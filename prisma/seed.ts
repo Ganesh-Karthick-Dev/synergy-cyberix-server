@@ -119,7 +119,7 @@ async function main() {
           complianceChecking: true,
           advancedReporting: true,
           prioritySupport: true,
-          maxProjects: 10,
+          maxProjects: 10, // 10 projects for PRO plan
           maxScansPerProject: -1, // -1 = unlimited
           maxScans: -1 // -1 = unlimited
         },

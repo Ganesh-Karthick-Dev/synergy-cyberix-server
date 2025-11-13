@@ -339,4 +339,63 @@ export class SecurityReportController {
       });
     }
   }
+
+  /**
+   * Admin: Get user's security reports (scans) by user ID
+   */
+  @Get('/admin/user/:userId')
+  @Use(authenticate)
+  async getAdminUserReports(req: Request, res: Response): Promise<void> {
+    try {
+      // Check if user is admin
+      if (req.user?.role !== 'ADMIN') {
+        res.status(403).json({
+          success: false,
+          error: {
+            message: 'Admin access required',
+            statusCode: 403
+          }
+        });
+        return;
+      }
+
+      const { userId } = req.params;
+      const { projectId, toolId, status, severity } = req.query;
+
+      if (!userId) {
+        res.status(400).json({
+          success: false,
+          error: {
+            message: 'User ID is required',
+            statusCode: 400
+          }
+        });
+        return;
+      }
+
+      const reports = await this.reportService.getUserReports(userId, {
+        projectId: projectId as string,
+        toolId: toolId as string,
+        status: status as string,
+        severity: severity as string
+      });
+
+      const response: ApiResponse = {
+        success: true,
+        data: reports,
+        message: 'User security reports retrieved successfully'
+      };
+
+      res.json(response);
+    } catch (error: any) {
+      const statusCode = error.statusCode || 500;
+      res.status(statusCode).json({
+        success: false,
+        error: {
+          message: error.message || 'Failed to retrieve user reports',
+          statusCode
+        }
+      });
+    }
+  }
 }

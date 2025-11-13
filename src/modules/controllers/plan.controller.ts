@@ -306,4 +306,57 @@ export class PlanController {
       });
     }
   }
+
+  /**
+   * Admin: Get user's active subscription by user ID
+   */
+  @Get('/subscription/user/:userId')
+  @Use(authenticate)
+  async getAdminUserSubscription(req: Request, res: Response): Promise<void> {
+    try {
+      // Check if user is admin
+      if (req.user?.role !== 'ADMIN') {
+        res.status(403).json({
+          success: false,
+          error: {
+            message: 'Admin access required',
+            statusCode: 403
+          }
+        });
+        return;
+      }
+
+      const { userId } = req.params;
+
+      if (!userId) {
+        res.status(400).json({
+          success: false,
+          error: {
+            message: 'User ID is required',
+            statusCode: 400
+          }
+        });
+        return;
+      }
+
+      const subscription = await this.planService.getUserActiveSubscription(userId);
+
+      const response: ApiResponse = {
+        success: true,
+        data: subscription,
+        message: subscription ? 'User subscription retrieved successfully' : 'No active subscription found for user'
+      };
+
+      res.json(response);
+    } catch (error: any) {
+      const statusCode = error.statusCode || 500;
+      res.status(statusCode).json({
+        success: false,
+        error: {
+          message: error.message || 'Failed to retrieve user subscription',
+          statusCode
+        }
+      });
+    }
+  }
 }

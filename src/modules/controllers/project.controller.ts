@@ -377,4 +377,58 @@ export class ProjectController {
       });
     }
   }
+
+  /**
+   * Admin: Get user's projects by user ID
+   */
+  @Get('/admin/user/:userId')
+  @Use(authenticate)
+  async getAdminUserProjects(req: Request, res: Response): Promise<void> {
+    try {
+      // Check if user is admin
+      if (req.user?.role !== 'ADMIN') {
+        res.status(403).json({
+          success: false,
+          error: {
+            message: 'Admin access required',
+            statusCode: 403
+          }
+        });
+        return;
+      }
+
+      const { userId } = req.params;
+      const includeArchived = req.query.includeArchived === 'true';
+
+      if (!userId) {
+        res.status(400).json({
+          success: false,
+          error: {
+            message: 'User ID is required',
+            statusCode: 400
+          }
+        });
+        return;
+      }
+
+      const projects = await this.projectService.getUserProjects(userId, includeArchived);
+
+      const response: ApiResponse = {
+        success: true,
+        data: projects,
+        message: 'User projects retrieved successfully'
+      };
+
+      res.json(response);
+    } catch (error: any) {
+      const statusCode = error.statusCode || 500;
+      res.status(statusCode).json({
+        success: false,
+        error: {
+          message: error.message || 'Failed to retrieve user projects',
+          statusCode
+        }
+      });
+    }
+  }
 }
