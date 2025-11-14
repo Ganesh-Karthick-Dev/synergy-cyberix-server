@@ -26,14 +26,15 @@ export class PaymentController {
    */
   @Post('/create-order')
   @Validate([
-    body('amount').isNumeric().withMessage('Amount must be a number'),
+    body('amount').optional().isNumeric().withMessage('Amount must be a number'),
     body('planId').optional().isString().withMessage('Plan ID must be a string'),
     body('currency').optional().isString().withMessage('Currency must be a string'),
-    body('description').optional().isString().withMessage('Description must be a string')
+    body('description').optional().isString().withMessage('Description must be a string'),
+    body('discountPercent').optional().isNumeric().withMessage('Discount percent must be a number')
   ])
   async createOrder(req: Request, res: Response): Promise<void> {
     try {
-      const { amount, currency = 'INR', planId, description } = req.body;
+      const { amount, currency = 'INR', planId, description, discountPercent } = req.body;
       const userId = req.user?.id;
 
       if (!userId) {
@@ -47,8 +48,37 @@ export class PaymentController {
         return;
       }
 
+      // If amount is provided (discounted), use it; otherwise get from plan
+      let finalAmount = amount;
+      if (!finalAmount && planId) {
+        // Get plan price if amount not provided
+        const plan = await prisma.servicePlan.findUnique({ where: { id: planId } });
+        if (!plan) {
+          res.status(404).json({
+            success: false,
+            error: {
+              message: 'Plan not found',
+              statusCode: 404
+            }
+          });
+          return;
+        }
+        finalAmount = parseFloat(plan.price.toString());
+      }
+
+      if (!finalAmount) {
+        res.status(400).json({
+          success: false,
+          error: {
+            message: 'Amount is required',
+            statusCode: 400
+          }
+        });
+        return;
+      }
+
       // Convert amount to paise (Razorpay expects amount in smallest currency unit)
-      const amountInPaise = Math.round(amount * 100);
+      const amountInPaise = Math.round(finalAmount * 100);
 
       const orderData = {
         amount: amountInPaise,
@@ -58,8 +88,10 @@ export class PaymentController {
         notes: {
           description: description || 'Plan subscription',
           userId,
-          planId
-        }
+          planId,
+          ...(discountPercent && { discountPercent: discountPercent.toString() })
+        },
+        metadata: discountPercent ? { discountPercent } : undefined
       };
 
       const order = await this.razorpayService.createOrder(orderData);
@@ -370,6 +402,97 @@ export class PaymentController {
         success: false,
         error: {
           message: error.message || 'Failed to generate invoice',
+          statusCode
+        }
+      });
+    }
+  }
+
+  /**
+   * Get user's payment history with invoices
+   */
+  @Get('/history')
+  @Use(authenticate)
+  async getPaymentHistory(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          error: {
+            message: 'User not authenticated',
+            statusCode: 401
+          }
+        });
+        return;
+      }
+
+      // Get all completed payments for the user
+      const payments = await prisma.payment.findMany({
+        where: {
+          userId,
+          status: 'COMPLETED'
+        },
+        include: {
+          order: {
+            include: {
+              plan: {
+                select: {
+                  id: true,
+                  name: true,
+                  description: true,
+                  price: true,
+                  currency: true,
+                  billingCycle: true
+                }
+              }
+            }
+          }
+        },
+        orderBy: {
+          paidAt: 'desc'
+        }
+      });
+
+      // Format the response with invoice information
+      const paymentHistory = payments.map((payment) => {
+        const invoiceNumber = `INV-${payment.id.slice(-8).toUpperCase()}`;
+        return {
+          id: payment.id,
+          invoiceNumber,
+          orderId: payment.orderId,
+          amount: parseFloat(payment.amount.toString()),
+          currency: payment.currency,
+          status: payment.status,
+          paymentMethod: payment.method || 'Razorpay',
+          transactionId: payment.razorpayPaymentId,
+          paidAt: payment.paidAt || payment.createdAt,
+          plan: payment.order?.plan ? {
+            id: payment.order.plan.id,
+            name: payment.order.plan.name,
+            description: payment.order.plan.description,
+            price: parseFloat(payment.order.plan.price.toString()),
+            currency: payment.order.plan.currency,
+            billingCycle: payment.order.plan.billingCycle
+          } : null,
+          canDownloadInvoice: true
+        };
+      });
+
+      const response: ApiResponse = {
+        success: true,
+        data: paymentHistory,
+        message: 'Payment history retrieved successfully'
+      };
+
+      res.json(response);
+    } catch (error: any) {
+      const statusCode = error.statusCode || 500;
+      res.status(statusCode).json({
+        success: false,
+        error: {
+          message: error.message || 'Failed to retrieve payment history',
           statusCode
         }
       });

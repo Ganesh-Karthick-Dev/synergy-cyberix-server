@@ -710,4 +710,191 @@ export class EmailService {
     </html>
     `;
   }
+
+  /**
+   * Send contact form email to admin
+   */
+  async sendContactFormEmail(
+    name: string,
+    email: string,
+    subject: string,
+    message: string
+  ): Promise<void> {
+    const adminEmail = config.email?.user || 'ganeshkarthik18697@gmail.com';
+    
+    const mailOptions = {
+      from: `"Cyberix Contact Form" <${config.email?.user || 'noreply@cyberix.com'}>`,
+      to: adminEmail,
+      replyTo: email, // Allow admin to reply directly to the user
+      subject: `Contact Form: ${subject}`,
+      html: this.getContactFormEmailTemplate(name, email, subject, message)
+    };
+
+    try {
+      await this.transporter.sendMail(mailOptions);
+      console.log(`Contact form email sent from ${email} to ${adminEmail}`);
+    } catch (error) {
+      console.error('Error sending contact form email:', error);
+      throw new Error('Failed to send contact form email');
+    }
+  }
+
+  private getContactFormEmailTemplate(
+    name: string,
+    email: string,
+    subject: string,
+    message: string
+  ): string {
+    return `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>New Contact Form Submission - Cyberix Security</title>
+        <style>
+            body, table, td, a {
+                -webkit-text-size-adjust: 100%;
+                -ms-text-size-adjust: 100%;
+            }
+            table, td {
+                border-collapse: collapse !important;
+            }
+            img {
+                border: 0;
+                line-height: 100%;
+                text-decoration: none;
+                -ms-interpolation-mode: bicubic;
+            }
+            body {
+                margin: 0 !important;
+                padding: 0 !important;
+                width: 100% !important;
+                height: 100% !important;
+                background-color: #f9f9f9;
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                color: #333;
+            }
+            .container {
+                max-width: 600px;
+                margin: 20px auto;
+                background-color: #ffffff;
+                border-radius: 12px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+                overflow: hidden;
+            }
+            .header {
+                background-color: #f97316;
+                padding: 30px 20px;
+                text-align: center;
+                color: #fff;
+            }
+            .header .logo {
+                font-size: 26px;
+                font-weight: bold;
+                margin-bottom: 6px;
+            }
+            .content {
+                padding: 30px 25px;
+            }
+            h2 {
+                color: #f97316;
+                margin-bottom: 12px;
+            }
+            .info-box {
+                background-color: #fff8f3;
+                border: 1px solid #fcd9bd;
+                border-radius: 8px;
+                padding: 20px;
+                margin: 20px 0;
+            }
+            .info-item {
+                display: flex;
+                justify-content: space-between;
+                margin-bottom: 12px;
+                border-bottom: 1px solid #f1f1f1;
+                padding-bottom: 8px;
+            }
+            .info-item:last-child {
+                border-bottom: none;
+                margin-bottom: 0;
+                padding-bottom: 0;
+            }
+            .info-label {
+                font-weight: 600;
+                color: #444;
+            }
+            .info-value {
+                color: #333;
+            }
+            .message-box {
+                background-color: #f9fafb;
+                border-left: 4px solid #f97316;
+                padding: 20px;
+                border-radius: 6px;
+                margin: 20px 0;
+                white-space: pre-wrap;
+                word-wrap: break-word;
+            }
+            .footer {
+                text-align: center;
+                font-size: 12px;
+                color: #999;
+                border-top: 1px solid #eee;
+                padding: 20px;
+                background: #fafafa;
+            }
+            @media screen and (max-width: 600px) {
+                .content {
+                    padding: 20px 15px;
+                }
+                h2 {
+                    font-size: 20px;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <div class="logo">📧 New Contact Form Submission</div>
+            </div>
+
+            <div class="content">
+                <h2>You have a new message from your website</h2>
+                
+                <div class="info-box">
+                    <div class="info-item">
+                        <span class="info-label">Name:</span>
+                        <span class="info-value">${name}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Email:</span>
+                        <span class="info-value"><a href="mailto:${email}">${email}</a></span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Subject:</span>
+                        <span class="info-value">${subject}</span>
+                    </div>
+                </div>
+
+                <h3 style="color: #f97316; margin-top: 30px;">Message:</h3>
+                <div class="message-box">
+                    ${message}
+                </div>
+
+                <p style="margin-top: 30px; color: #666; font-size: 14px;">
+                    You can reply directly to this email to respond to ${name} at <a href="mailto:${email}">${email}</a>.
+                </p>
+            </div>
+
+            <div class="footer">
+                © 2024 Cyberix Security. All rights reserved.<br>
+                This is an automated email from the contact form.
+            </div>
+        </div>
+    </body>
+    </html>
+    `;
+  }
 }
