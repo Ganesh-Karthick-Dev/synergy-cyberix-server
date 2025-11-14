@@ -20,6 +20,9 @@ process.on('beforeExit', async () => {
   await prisma.$disconnect();
 });
 
+console.log('Database connected');
+
+
 process.on('SIGINT', async () => {
   await prisma.$disconnect();
   process.exit(0);
