@@ -87,8 +87,10 @@ async function main() {
 
   // Create service plans
   const servicePlans = await Promise.all([
-    prisma.servicePlan.create({
-      data: {
+    prisma.servicePlan.upsert({
+      where: { name: 'FREE' },
+      update: {},
+      create: {
         name: 'FREE',
         description: 'Free tier with basic security features',
         price: 0.00,
@@ -106,8 +108,10 @@ async function main() {
         maxStorage: 100 * 1024 * 1024 // 100MB
       }
     }),
-    prisma.servicePlan.create({
-      data: {
+    prisma.servicePlan.upsert({
+      where: { name: 'PRO' },
+      update: {},
+      create: {
         name: 'PRO',
         description: 'Professional security features for growing businesses',
         price: 99.99,
@@ -127,8 +131,10 @@ async function main() {
         maxStorage: 10 * 1024 * 1024 * 1024 // 10GB
       }
     }),
-    prisma.servicePlan.create({
-      data: {
+    prisma.servicePlan.upsert({
+      where: { name: 'PRO_PLUS' },
+      update: {},
+      create: {
         name: 'PRO_PLUS',
         description: 'Premium security solution for large organizations',
         price: 299.99,
@@ -184,41 +190,117 @@ async function main() {
 
   console.log('✅ User subscriptions created:', subscriptions.length);
 
-  // Create security tools
+  // Create security tools - 7 scanning tools as requested
   const securityTools = await Promise.all([
-    prisma.securityTool.create({
-      data: {
-        name: 'Vulnerability Scanner',
-        description: 'Automated vulnerability scanning tool',
+    prisma.securityTool.upsert({
+      where: { name: 'Port Scanner' },
+      update: {},
+      create: {
+        name: 'Port Scanner',
+        description: 'Comprehensive port scanning to identify open ports and services',
         category: SecurityCategory.VULNERABILITY_SCANNER,
+        isActive: true,
         config: {
-          scanDepth: 'deep',
-          reportFormat: 'pdf',
-          schedule: 'weekly'
+          scanTypes: ['TCP', 'UDP'],
+          portRange: '1-65535',
+          serviceDetection: true,
+          vulnerabilityMapping: true
         }
       }
     }),
-    prisma.securityTool.create({
-      data: {
-        name: 'Penetration Testing Suite',
-        description: 'Comprehensive penetration testing tools',
-        category: SecurityCategory.PENETRATION_TESTING,
+    prisma.securityTool.upsert({
+      where: { name: 'Network Scanner' },
+      update: {},
+      create: {
+        name: 'Network Scanner',
+        description: 'Advanced network discovery and topology analysis',
+        category: SecurityCategory.VULNERABILITY_SCANNER,
+        isActive: true,
         config: {
-          testTypes: ['web', 'network', 'mobile'],
-          reportFormat: 'html',
-          schedule: 'monthly'
+          discoveryMethods: ['ARP', 'ICMP', 'TCP SYN'],
+          topologyMapping: true,
+          trafficAnalysis: true,
+          deviceFingerprinting: true
         }
       }
     }),
-    prisma.securityTool.create({
-      data: {
-        name: 'Compliance Checker',
-        description: 'Automated compliance checking for various standards',
-        category: SecurityCategory.COMPLIANCE_CHECKER,
+    prisma.securityTool.upsert({
+      where: { name: 'Server Scanner' },
+      update: {},
+      create: {
+        name: 'Server Scanner',
+        description: 'Deep server analysis for configuration and security issues',
+        category: SecurityCategory.VULNERABILITY_SCANNER,
+        isActive: false,
         config: {
-          standards: ['PCI-DSS', 'HIPAA', 'SOX', 'GDPR'],
-          reportFormat: 'excel',
-          schedule: 'quarterly'
+          serverTypes: ['web', 'database', 'application'],
+          configAnalysis: true,
+          headerInspection: true,
+          sslValidation: true
+        }
+      }
+    }),
+    prisma.securityTool.upsert({
+      where: { name: 'Database Scanner' },
+      update: {},
+      create: {
+        name: 'Database Scanner',
+        description: 'Database security assessment and vulnerability detection',
+        category: SecurityCategory.VULNERABILITY_SCANNER,
+        isActive: true,
+        config: {
+          databaseTypes: ['MySQL', 'PostgreSQL', 'MongoDB', 'Redis'],
+          injectionTesting: true,
+          permissionAnalysis: true,
+          dataExposureChecks: true
+        }
+      }
+    }),
+    prisma.securityTool.upsert({
+      where: { name: 'Web Application Scanner' },
+      update: {},
+      create: {
+        name: 'Web Application Scanner',
+        description: 'Comprehensive web application security scanning',
+        category: SecurityCategory.VULNERABILITY_SCANNER,
+        isActive: true,
+        config: {
+          scanTypes: ['XSS', 'SQLi', 'CSRF', 'SSRF'],
+          crawlerDepth: 3,
+          formTesting: true,
+          apiEndpointScanning: true
+        }
+      }
+    }),
+    prisma.securityTool.upsert({
+      where: { name: 'SSL/TLS Scanner' },
+      update: {},
+      create: {
+        name: 'SSL/TLS Scanner',
+        description: 'SSL/TLS certificate and configuration analysis',
+        category: SecurityCategory.VULNERABILITY_SCANNER,
+        isActive: true,
+        config: {
+          protocols: ['SSLv3', 'TLSv1.0', 'TLSv1.1', 'TLSv1.2', 'TLSv1.3'],
+          cipherAnalysis: true,
+          certificateValidation: true,
+          chainVerification: true
+        }
+      }
+    }),
+    prisma.securityTool.upsert({
+      where: { name: 'File System Scanner' },
+      update: {},
+      create: {
+        name: 'File System Scanner',
+        description: 'File system security and permission analysis',
+        category: SecurityCategory.VULNERABILITY_SCANNER,
+        isActive: false,
+        config: {
+          scanPaths: ['/', '/var', '/etc', '/home'],
+          permissionAnalysis: true,
+          fileIntegrityChecks: true,
+          malwareScanning: true
         }
       }
     })
