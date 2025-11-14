@@ -44,6 +44,7 @@ model User {
   apiKeys         ApiKey[]
   auditLogs       AuditLog[]
   fcmTokens       UserFcmToken[]
+  pushNotifications PushNotification[]
 
   @@map("users")
 }
@@ -382,6 +383,32 @@ model NotificationTemplate {
   @@map("notification_templates")
 }
 
+// ==================== ADMIN PUSH NOTIFICATIONS ====================
+
+model PushNotification {
+  id          String               @id @default(cuid())
+  title       String
+  message     String
+  type        PushNotificationType @default(GENERAL)
+  targetUsers PushNotificationTarget @default(ALL_USERS)
+  userIds     String[] // Array of user IDs for targeted notifications
+  data        Json? // Additional notification data
+  imageUrl    String?
+  scheduledAt DateTime?
+  sentAt      DateTime?
+  status      PushNotificationStatus @default(DRAFT)
+  sentCount   Int                   @default(0)
+  readCount   Int                   @default(0)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  // Relations
+  createdBy   User?                @relation(fields: [createdById], references: [id])
+  createdById String?
+
+  @@map("push_notifications")
+}
+
 // ==================== AUDIT & ANALYTICS ====================
 
 model AuditLog {
@@ -507,4 +534,28 @@ enum NotificationType {
   FEATURE_ANNOUNCEMENT
   MAINTENANCE_NOTICE
   GENERAL
+}
+
+enum PushNotificationType {
+  SECURITY_ALERT
+  SYSTEM_UPDATE
+  BILLING_REMINDER
+  FEATURE_ANNOUNCEMENT
+  MAINTENANCE_NOTICE
+  PROMOTIONAL
+  GENERAL
+}
+
+enum PushNotificationTarget {
+  ALL_USERS
+  ACTIVE_USERS
+  PREMIUM_USERS
+  SPECIFIC_USERS
+}
+
+enum PushNotificationStatus {
+  DRAFT
+  SCHEDULED
+  SENT
+  CANCELLED
 }

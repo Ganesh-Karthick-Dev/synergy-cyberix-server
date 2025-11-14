@@ -1,4 +1,4 @@
-import { PrismaClient, UserRole, UserStatus, BillingCycle, SecurityCategory, SeverityLevel, ReportStatus, CampaignStatus, AdStatus, NotificationType } from '@prisma/client';
+import { PrismaClient, UserRole, UserStatus, BillingCycle, SecurityCategory, SeverityLevel, ReportStatus, CampaignStatus, AdStatus, NotificationType, PushNotificationType, PushNotificationTarget, PushNotificationStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -529,12 +529,93 @@ async function main() {
 
   console.log('✅ Audit logs created:', auditLogs.length);
 
+  // Create push notifications
+  const pushNotifications = await Promise.all([
+    prisma.pushNotification.upsert({
+      where: { id: 'welcome-notification' },
+      update: {},
+      create: {
+        id: 'welcome-notification',
+        title: 'Welcome to Cyberix Security!',
+        message: 'Thank you for joining our cybersecurity platform. Start scanning your website today!',
+        type: PushNotificationType.GENERAL,
+        targetUsers: PushNotificationTarget.ALL_USERS,
+        userIds: [],
+        status: PushNotificationStatus.DRAFT,
+        createdById: admin.id
+      }
+    }),
+    prisma.pushNotification.upsert({
+      where: { id: 'security-alert-notification' },
+      update: {},
+      create: {
+        id: 'security-alert-notification',
+        title: 'Security Alert: New Vulnerability Detected',
+        message: 'A new high-severity vulnerability has been discovered. Update your security tools immediately.',
+        type: PushNotificationType.SECURITY_ALERT,
+        targetUsers: PushNotificationTarget.ALL_USERS,
+        userIds: [],
+        status: PushNotificationStatus.SENT,
+        sentAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), // 2 days ago
+        sentCount: 150,
+        createdById: admin.id
+      }
+    }),
+    prisma.pushNotification.upsert({
+      where: { id: 'maintenance-notification' },
+      update: {},
+      create: {
+        id: 'maintenance-notification',
+        title: 'Maintenance Notice',
+        message: 'Scheduled maintenance will occur tonight from 2-4 AM. Some features may be temporarily unavailable.',
+        type: PushNotificationType.MAINTENANCE_NOTICE,
+        targetUsers: PushNotificationTarget.ALL_USERS,
+        userIds: [],
+        status: PushNotificationStatus.SCHEDULED,
+        scheduledAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // Tomorrow
+        createdById: admin.id
+      }
+    }),
+    prisma.pushNotification.upsert({
+      where: { id: 'promotional-notification' },
+      update: {},
+      create: {
+        id: 'promotional-notification',
+        title: 'Exclusive Premium Features',
+        message: 'Upgrade to PRO plan and get access to advanced scanning tools and priority support!',
+        type: PushNotificationType.PROMOTIONAL,
+        targetUsers: PushNotificationTarget.ACTIVE_USERS,
+        userIds: [],
+        status: PushNotificationStatus.DRAFT,
+        imageUrl: 'https://example.com/pro-upgrade.jpg',
+        createdById: admin.id
+      }
+    }),
+    prisma.pushNotification.upsert({
+      where: { id: 'billing-reminder-notification' },
+      update: {},
+      create: {
+        id: 'billing-reminder-notification',
+        title: 'Payment Reminder',
+        message: 'Your subscription will expire in 3 days. Renew now to continue enjoying our services.',
+        type: PushNotificationType.BILLING_REMINDER,
+        targetUsers: PushNotificationTarget.PREMIUM_USERS,
+        userIds: [],
+        status: PushNotificationStatus.DRAFT,
+        createdById: admin.id
+      }
+    })
+  ]);
+
+  console.log('✅ Push notifications created:', pushNotifications.length);
+
   console.log('🎉 Cyberix Security Admin database seeding completed successfully!');
   console.log('📊 Summary:');
   console.log(`   - Users: ${await prisma.user.count()}`);
   console.log(`   - Service Plans: ${await prisma.servicePlan.count()}`);
   console.log(`   - Security Tools: ${await prisma.securityTool.count()}`);
   console.log(`   - Security Reports: ${await prisma.securityReport.count()}`);
+  console.log(`   - Push Notifications: ${await prisma.pushNotification.count()}`);
   console.log(`   - Ad Campaigns: ${await prisma.adCampaign.count()}`);
   console.log(`   - Notifications: ${await prisma.notification.count()}`);
   console.log(`   - Dashboard Metrics: ${await prisma.dashboardMetric.count()}`);

@@ -28,6 +28,7 @@ import { DashboardController } from './modules/controllers/dashboard.controller'
 import { UsersController } from './modules/controllers/users.controller';
 import { PlanController } from './modules/controllers/plan.controller';
 import { SecurityToolsController } from './modules/controllers/security-tools.controller';
+import { PushNotificationController } from './modules/controllers/push-notification.controller';
 import { NotificationsController } from './modules/controllers/notifications.controller';
 import { AdsController } from './modules/controllers/ads.controller';
 import { FcmController } from './modules/controllers/fcm.controller';
@@ -166,6 +167,7 @@ class Server {
       ProjectController,
       SecurityReportController,
       SecurityToolsController,
+      PushNotificationController,
       NotificationsController,
       AdsController,
       GitHubController

@@ -13,4 +13,7 @@ export * from './project.controller';
 // Security Report controllers
 export * from './security-report.controller';
 
+// Push Notification controllers
+export * from './push-notification.controller';
+
 // Post controllers removed - not needed for cybersecurity server
