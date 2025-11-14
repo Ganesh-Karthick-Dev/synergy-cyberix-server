@@ -244,30 +244,51 @@ export class FirebaseService {
         },
       };
 
-      // Send to each token individually for better error handling
-      const results = await Promise.allSettled(
-        tokens.map(token =>
-          admin.messaging().send({
-            token,
-            notification: message.notification,
-            data: message.data,
-            webpush: message.webpush,
-            android: message.android,
-            apns: message.apns,
-          })
-        )
-      );
+      // Use sendEachForMulticast for efficient bulk sending (handles up to 500 tokens per call)
+      // Official Firebase method for sending the same message to multiple tokens
+      // Reference: https://firebase.google.com/docs/cloud-messaging/send/admin-sdk
+      const BATCH_SIZE = 500;
+      const batches: string[][] = [];
+      
+      for (let i = 0; i < tokens.length; i += BATCH_SIZE) {
+        batches.push(tokens.slice(i, i + BATCH_SIZE));
+      }
 
-      const successCount = results.filter(result => result.status === 'fulfilled').length;
-      const failureCount = results.filter(result => result.status === 'rejected').length;
+      let totalSuccessCount = 0;
+      let totalFailureCount = 0;
+      const allResponses: any[] = [];
+
+      // Process each batch
+      for (const batch of batches) {
+        // Create multicast message for this batch
+        const batchMessage: admin.messaging.MulticastMessage = {
+          ...message,
+          tokens: batch,
+        };
+
+        // Use sendEachForMulticast (official Firebase method for bulk sending)
+        const batchResponse = await admin.messaging().sendEachForMulticast(batchMessage);
+        
+        totalSuccessCount += batchResponse.successCount;
+        totalFailureCount += batchResponse.failureCount;
+        
+        // Map responses to our format
+        batchResponse.responses.forEach((response: admin.messaging.SendResponse, index: number) => {
+          allResponses.push({
+            success: response.success,
+            error: response.error ? {
+              code: response.error.code,
+              message: response.error.message,
+            } : undefined,
+            token: batch[index],
+          });
+        });
+      }
 
       const response = {
-        responses: results.map(result => ({
-          success: result.status === 'fulfilled',
-          error: result.status === 'rejected' ? result.reason : undefined,
-        })),
-        successCount,
-        failureCount,
+        responses: allResponses,
+        successCount: totalSuccessCount,
+        failureCount: totalFailureCount,
       };
       logger.info('Push notification sent', {
         successCount: response.successCount,
