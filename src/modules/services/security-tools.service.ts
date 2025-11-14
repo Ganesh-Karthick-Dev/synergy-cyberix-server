@@ -128,6 +128,14 @@ export class SecurityToolsService {
       [SecurityCategory.MONITORING]: {
         name: 'Monitoring',
         description: 'System monitoring and alerting tools'
+      },
+      [SecurityCategory.CLOUD_SECURITY]: {
+        name: 'Cloud Security',
+        description: 'Cloud platform security and protection tools'
+      },
+      [SecurityCategory.OVERVIEW_SCAN]: {
+        name: 'Overview Scan',
+        description: 'Comprehensive security overview and assessment'
       }
     };
 
@@ -211,6 +219,17 @@ export class SecurityToolsService {
     });
 
     logger.info('Security tool deleted', { toolId: id, toolName: tool.name });
+  }
+
+  async getEnabledTools(): Promise<SecurityToolData[]> {
+    const enabledTools = await prisma.securityTool.findMany({
+      where: {
+        isActive: true
+      },
+      orderBy: { createdAt: 'asc' }
+    });
+
+    return enabledTools;
   }
 
   async deployUpdates(): Promise<void> {

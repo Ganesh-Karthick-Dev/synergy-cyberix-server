@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { Controller, Post, Get, Delete } from '../../decorators/controller.decorator';
+import { Controller, Post, Get, Put, Delete } from '../../decorators/controller.decorator';
 import { Validate, RegisterUserValidation } from '../../decorators/validation.decorator';
 import { body } from 'express-validator';
 import { Service } from '../../decorators/service.decorator';
@@ -562,6 +562,139 @@ export class AuthController {
         success: false,
         error: {
           message: error instanceof Error ? error.message : 'Failed to retrieve profile',
+          statusCode: 500
+        }
+      });
+    }
+  }
+
+  @Put('/profile')
+  @Use(authenticate)
+  @Validate([
+    body('firstName').optional().isString().withMessage('First name must be a string'),
+    body('lastName').optional().isString().withMessage('Last name must be a string'),
+    body('email').optional().isEmail().withMessage('Email must be valid'),
+    body('phone').optional().isString().withMessage('Phone must be a string'),
+    body('avatar').optional().isString().withMessage('Avatar must be a string'),
+    body('companyName').optional().isString().withMessage('Company name must be a string'),
+    body('location').optional().isString().withMessage('Location must be a string')
+  ])
+  async updateProfile(req: Request, res: Response): Promise<void> {
+    try {
+      if (!req.user) {
+        res.status(401).json({
+          success: false,
+          error: { message: 'Unauthorized', statusCode: 401 }
+        });
+        return;
+      }
+
+      const { firstName, lastName, email, phone, avatar, companyName, location } = req.body;
+      const userId = req.user.id;
+
+      // Check if email is being changed and if it's already taken
+      if (email) {
+        const existingUser = await prisma.user.findFirst({
+          where: {
+            AND: [
+              { id: { not: userId } },
+              { email: email.toLowerCase() }
+            ]
+          }
+        });
+        if (existingUser) {
+          res.status(400).json({
+            success: false,
+            error: {
+              message: 'Email already exists',
+              statusCode: 400
+            }
+          });
+          return;
+        }
+      }
+
+      // Update user in database
+      // Build base update data
+      const baseUpdateData: any = {
+        ...(firstName !== undefined && { firstName }),
+        ...(lastName !== undefined && { lastName }),
+        ...(email !== undefined && { email: email.toLowerCase() }),
+        ...(phone !== undefined && { phone }),
+        ...(avatar !== undefined && { avatar })
+      };
+
+      // Try to update with company fields first, fallback to base if they don't exist
+      let updatedUser: any;
+      let updateData = { ...baseUpdateData };
+      
+      // Add company fields if provided
+      if (companyName !== undefined) {
+        updateData.companyName = companyName;
+      }
+      if (location !== undefined) {
+        updateData.location = location;
+      }
+
+      try {
+        // Try updating with all fields including company fields
+        updatedUser = await prisma.user.update({
+          where: { id: userId },
+          data: updateData,
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            avatar: true,
+            phone: true,
+            role: true,
+            status: true,
+            updatedAt: true,
+            // @ts-ignore - These fields will be available after migration
+            companyName: true,
+            location: true,
+          }
+        });
+      } catch (prismaError: any) {
+        // If error is about unknown fields, retry with base fields only
+        if (prismaError?.message?.includes('Unknown argument') || 
+            prismaError?.message?.includes('companyName') || 
+            prismaError?.message?.includes('location')) {
+          console.warn('Company fields not available in Prisma schema yet, updating without them');
+          updatedUser = await prisma.user.update({
+            where: { id: userId },
+            data: baseUpdateData,
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              avatar: true,
+              phone: true,
+              role: true,
+              status: true,
+              updatedAt: true,
+            }
+          });
+        } else {
+          // Re-throw if it's a different error
+          throw prismaError;
+        }
+      }
+
+      const response: ApiResponse = {
+        success: true,
+        data: updatedUser,
+        message: 'Profile updated successfully'
+      };
+
+      res.json(response);
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: {
+          message: error instanceof Error ? error.message : 'Failed to update profile',
           statusCode: 500
         }
       });
@@ -1199,7 +1332,7 @@ export class AuthController {
         const errorMessage = err?.message || 'Google authentication failed';
         console.error('🌐 [Backend Website Callback] Authentication failed:', errorMessage);
         // Website frontend URL - use environment variable or default to port 3001
-        const websiteUrl = process.env.WEBSITE_URL || 'http://localhost:3001';
+        const websiteUrl = process.env.WEBSITE_URL || 'http://localhost:4006';
         return res.redirect(`${websiteUrl}/login?error=${encodeURIComponent(errorMessage)}`);
       }
 
@@ -1285,14 +1418,14 @@ export class AuthController {
         delete (req.session as any)?.isWebsite;
 
         // Website frontend URL - use environment variable or default to port 3001
-        const websiteUrl = process.env.WEBSITE_URL || 'http://localhost:3001';
+        const websiteUrl = process.env.WEBSITE_URL || 'http://localhost:4006';
         const finalRedirectUrl = `${websiteUrl}${redirectUrl}`;
         
         console.log('🌐 [Backend Website Callback] Redirecting to website:', finalRedirectUrl);
         return res.redirect(finalRedirectUrl);
       } catch (error: any) {
         console.error('🌐 [Backend Website Callback] Error:', error);
-        const websiteUrl = process.env.WEBSITE_URL || 'http://localhost:3001';
+        const websiteUrl = process.env.WEBSITE_URL || 'http://localhost:4006';
         return res.redirect(`${websiteUrl}/login?error=${encodeURIComponent(error?.message || 'Login failed')}`);
       }
     })(req, res);

@@ -44,6 +44,7 @@ export class SecurityToolsController {
         isEnabled: tool.isActive,
         status: tool.isActive ? 'active' : 'maintenance',
         lastUpdated: this.getTimeAgo(tool.updatedAt),
+        features: this.getToolFeatures(tool),
         config: tool.config
       }));
 
@@ -171,6 +172,122 @@ export class SecurityToolsController {
           statusCode: 500
         }
       });
+    }
+  }
+
+  @Get('/enabled')
+  async getEnabledTools(req: Request, res: Response): Promise<void> {
+    try {
+      const enabledTools = await this.securityToolsService.getEnabledTools();
+
+      // Transform to include features for frontend compatibility
+      const transformedTools = enabledTools.map(tool => ({
+        id: tool.id,
+        name: tool.name,
+        description: tool.description,
+        category: tool.category.toLowerCase(),
+        isEnabled: tool.isActive,
+        status: tool.isActive ? 'active' : 'maintenance',
+        lastUpdated: this.getTimeAgo(tool.updatedAt),
+        features: this.getToolFeatures(tool),
+        config: tool.config
+      }));
+
+      const response: ApiResponse = {
+        success: true,
+        data: transformedTools,
+        message: 'Enabled tools retrieved successfully'
+      };
+
+      res.json(response);
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: {
+          message: error instanceof Error ? error.message : 'Failed to retrieve enabled tools',
+          statusCode: 500
+        }
+      });
+    }
+  }
+
+  private getToolFeatures(tool: any): string[] {
+    const config = tool.config || {};
+
+    // Define features based on tool name and config
+    switch (tool.name) {
+      case 'Overview Scan':
+        return [
+          'Comprehensive security assessment',
+          'Risk analysis and reporting',
+          'Multi-dimensional scanning',
+          'Automated vulnerability detection',
+          'Real-time threat evaluation'
+        ];
+
+      case 'Port, Network, Server Scan':
+        return [
+          'Advanced port scanning',
+          'Network topology mapping',
+          'Server configuration analysis',
+          'Service detection and enumeration',
+          'Vulnerability correlation'
+        ];
+
+      case 'Shopify Cloud Shield':
+        return [
+          'DDoS protection',
+          'Malware scanning',
+          'SSL/TLS enforcement',
+          'Backup security',
+          'E-commerce protection'
+        ];
+
+      case 'Website Security Audit':
+        return [
+          'OWASP Top 10 compliance',
+          'PCI DSS validation',
+          'GDPR compliance checking',
+          'Automated vulnerability scanning',
+          'Remediation recommendations'
+        ];
+
+      case 'Phishing & Brand Abuse Detection':
+        return [
+          'Advanced phishing detection',
+          'Brand monitoring',
+          'URL analysis',
+          'Email scanning',
+          'Real-time alerts'
+        ];
+
+      case 'Malware and Defacement Monitor':
+        return [
+          'Real-time malware scanning',
+          'Website defacement detection',
+          'Automated cleanup',
+          'Continuous monitoring',
+          'Immediate threat alerts'
+        ];
+
+      case 'WordPress Cloud Shield':
+        return [
+          'Plugin security scanning',
+          'Core file protection',
+          'Brute force prevention',
+          'Backup security',
+          'Vulnerability patching'
+        ];
+
+      default:
+        // Generic features based on category
+        return [
+          'Automated scanning',
+          'Real-time monitoring',
+          'Threat detection',
+          'Security reporting',
+          'Compliance checking'
+        ];
     }
   }
 

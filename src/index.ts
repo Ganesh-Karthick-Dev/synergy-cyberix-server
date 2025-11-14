@@ -40,6 +40,7 @@ import { InvoiceService } from './modules/services/invoice.service';
 import { PlanRestrictionService } from './modules/services/plan-restriction.service';
 import { ProjectService } from './modules/services/project.service';
 import { SecurityReportService } from './modules/services/security-report.service';
+import { PushNotificationService } from './modules/services/push-notification.service';
 import { UserService } from './modules/services/user.service';
 import { EmailService } from './modules/services/email.service';
 import { AuthService } from './modules/services/auth.service';
@@ -127,6 +128,7 @@ class Server {
     container.autoRegister(PlanRestrictionService);
     container.autoRegister(ProjectService);
     container.autoRegister(SecurityReportService);
+    container.autoRegister(PushNotificationService);
     container.autoRegister(RegistrationController);
     container.autoRegister(AuthController);
     container.autoRegister(AdminController);
@@ -134,6 +136,7 @@ class Server {
     container.autoRegister(UsersController);
     container.autoRegister(PlanController);
     container.autoRegister(SecurityToolsController);
+    container.autoRegister(PushNotificationController);
     container.autoRegister(NotificationsController);
     container.autoRegister(AdsController);
     container.autoRegister(FcmController);

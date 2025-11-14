@@ -164,8 +164,20 @@ async function main() {
 
   // Create user subscriptions
   const subscriptions = await Promise.all([
-    prisma.userSubscription.create({
-      data: {
+    prisma.userSubscription.upsert({
+      where: {
+        userId_planId: {
+          userId: users[0].id,
+          planId: servicePlans[0].id
+        }
+      },
+      update: {
+        status: 'ACTIVE',
+        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+        autoRenew: true,
+        paymentMethod: 'credit_card'
+      },
+      create: {
         userId: users[0].id,
         planId: servicePlans[0].id,
         status: 'ACTIVE',
@@ -175,8 +187,20 @@ async function main() {
         paymentMethod: 'credit_card'
       }
     }),
-    prisma.userSubscription.create({
-      data: {
+    prisma.userSubscription.upsert({
+      where: {
+        userId_planId: {
+          userId: users[1].id,
+          planId: servicePlans[1].id
+        }
+      },
+      update: {
+        status: 'ACTIVE',
+        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+        autoRenew: true,
+        paymentMethod: 'paypal'
+      },
+      create: {
         userId: users[1].id,
         planId: servicePlans[1].id,
         status: 'ACTIVE',
@@ -190,117 +214,123 @@ async function main() {
 
   console.log('✅ User subscriptions created:', subscriptions.length);
 
-  // Create security tools - 7 scanning tools as requested
+  // Create security tools - 7 specific tools as requested
   const securityTools = await Promise.all([
     prisma.securityTool.upsert({
-      where: { name: 'Port Scanner' },
+      where: { name: 'Overview Scan' },
       update: {},
       create: {
-        name: 'Port Scanner',
-        description: 'Comprehensive port scanning to identify open ports and services',
+        name: 'Overview Scan',
+        description: 'Comprehensive security overview and initial assessment scan',
+        category: SecurityCategory.OVERVIEW_SCAN,
+        isActive: true,
+        config: {
+          scanDepth: 'comprehensive',
+          includeMetrics: true,
+          generateReport: true,
+          riskAssessment: true
+        }
+      }
+    }),
+    prisma.securityTool.upsert({
+      where: { name: 'Port, Network, Server Scan' },
+      update: {},
+      create: {
+        name: 'Port, Network, Server Scan',
+        description: 'Combined port scanning, network discovery, and server analysis',
         category: SecurityCategory.VULNERABILITY_SCANNER,
         isActive: true,
         config: {
-          scanTypes: ['TCP', 'UDP'],
           portRange: '1-65535',
+          networkDiscovery: true,
+          serverAnalysis: true,
           serviceDetection: true,
           vulnerabilityMapping: true
         }
       }
     }),
     prisma.securityTool.upsert({
-      where: { name: 'Network Scanner' },
+      where: { name: 'Shopify Cloud Shield' },
       update: {},
       create: {
-        name: 'Network Scanner',
-        description: 'Advanced network discovery and topology analysis',
-        category: SecurityCategory.VULNERABILITY_SCANNER,
+        name: 'Shopify Cloud Shield',
+        description: 'Advanced security protection for Shopify stores and cloud infrastructure',
+        category: SecurityCategory.CLOUD_SECURITY,
         isActive: true,
         config: {
-          discoveryMethods: ['ARP', 'ICMP', 'TCP SYN'],
-          topologyMapping: true,
-          trafficAnalysis: true,
-          deviceFingerprinting: true
+          platformType: 'shopify',
+          ddosProtection: true,
+          malwareScanning: true,
+          sslEnforcement: true,
+          backupProtection: true
         }
       }
     }),
     prisma.securityTool.upsert({
-      where: { name: 'Server Scanner' },
+      where: { name: 'Website Security Audit' },
       update: {},
       create: {
-        name: 'Server Scanner',
-        description: 'Deep server analysis for configuration and security issues',
-        category: SecurityCategory.VULNERABILITY_SCANNER,
-        isActive: false,
-        config: {
-          serverTypes: ['web', 'database', 'application'],
-          configAnalysis: true,
-          headerInspection: true,
-          sslValidation: true
-        }
-      }
-    }),
-    prisma.securityTool.upsert({
-      where: { name: 'Database Scanner' },
-      update: {},
-      create: {
-        name: 'Database Scanner',
-        description: 'Database security assessment and vulnerability detection',
-        category: SecurityCategory.VULNERABILITY_SCANNER,
+        name: 'Website Security Audit',
+        description: 'Complete website security assessment and vulnerability audit',
+        category: SecurityCategory.COMPLIANCE_CHECKER,
         isActive: true,
         config: {
-          databaseTypes: ['MySQL', 'PostgreSQL', 'MongoDB', 'Redis'],
-          injectionTesting: true,
-          permissionAnalysis: true,
-          dataExposureChecks: true
+          auditTypes: ['OWASP Top 10', 'PCI DSS', 'GDPR'],
+          automatedScanning: true,
+          manualReview: false,
+          complianceReporting: true,
+          remediationSuggestions: true
         }
       }
     }),
     prisma.securityTool.upsert({
-      where: { name: 'Web Application Scanner' },
+      where: { name: 'Phishing & Brand Abuse Detection' },
       update: {},
       create: {
-        name: 'Web Application Scanner',
-        description: 'Comprehensive web application security scanning',
-        category: SecurityCategory.VULNERABILITY_SCANNER,
+        name: 'Phishing & Brand Abuse Detection',
+        description: 'Advanced detection of phishing attempts and brand abuse activities',
+        category: SecurityCategory.THREAT_DETECTION,
         isActive: true,
         config: {
-          scanTypes: ['XSS', 'SQLi', 'CSRF', 'SSRF'],
-          crawlerDepth: 3,
-          formTesting: true,
-          apiEndpointScanning: true
+          phishingDetection: true,
+          brandMonitoring: true,
+          urlAnalysis: true,
+          emailScanning: true,
+          realTimeAlerts: true
         }
       }
     }),
     prisma.securityTool.upsert({
-      where: { name: 'SSL/TLS Scanner' },
+      where: { name: 'Malware and Defacement Monitor' },
       update: {},
       create: {
-        name: 'SSL/TLS Scanner',
-        description: 'SSL/TLS certificate and configuration analysis',
-        category: SecurityCategory.VULNERABILITY_SCANNER,
+        name: 'Malware and Defacement Monitor',
+        description: 'Continuous monitoring for malware infections and website defacement',
+        category: SecurityCategory.MONITORING,
         isActive: true,
         config: {
-          protocols: ['SSLv3', 'TLSv1.0', 'TLSv1.1', 'TLSv1.2', 'TLSv1.3'],
-          cipherAnalysis: true,
-          certificateValidation: true,
-          chainVerification: true
+          malwareScanning: true,
+          defacementDetection: true,
+          realTimeMonitoring: true,
+          automatedCleanup: false,
+          alertFrequency: 'immediate'
         }
       }
     }),
     prisma.securityTool.upsert({
-      where: { name: 'File System Scanner' },
+      where: { name: 'WordPress Cloud Shield' },
       update: {},
       create: {
-        name: 'File System Scanner',
-        description: 'File system security and permission analysis',
-        category: SecurityCategory.VULNERABILITY_SCANNER,
-        isActive: false,
+        name: 'WordPress Cloud Shield',
+        description: 'Comprehensive security protection for WordPress sites and cloud hosting',
+        category: SecurityCategory.CLOUD_SECURITY,
+        isActive: true,
         config: {
-          scanPaths: ['/', '/var', '/etc', '/home'],
-          permissionAnalysis: true,
-          fileIntegrityChecks: true,
-          malwareScanning: true
+          platformType: 'wordpress',
+          pluginSecurity: true,
+          coreProtection: true,
+          bruteForcePrevention: true,
+          backupSecurity: true
         }
       }
     })
@@ -418,8 +448,19 @@ async function main() {
 
   // Create notification templates
   const notificationTemplates = await Promise.all([
-    prisma.notificationTemplate.create({
-      data: {
+    prisma.notificationTemplate.upsert({
+      where: { name: 'Security Alert Template' },
+      update: {
+        title: 'Security Alert: {{severity}}',
+        message: 'A {{severity}} security issue has been detected: {{description}}',
+        type: NotificationType.SECURITY_ALERT,
+        variables: {
+          severity: 'string',
+          description: 'string',
+          timestamp: 'datetime'
+        }
+      },
+      create: {
         name: 'Security Alert Template',
         title: 'Security Alert: {{severity}}',
         message: 'A {{severity}} security issue has been detected: {{description}}',
@@ -431,8 +472,18 @@ async function main() {
         }
       }
     }),
-    prisma.notificationTemplate.create({
-      data: {
+    prisma.notificationTemplate.upsert({
+      where: { name: 'Billing Reminder Template' },
+      update: {
+        title: 'Payment Due: {{amount}}',
+        message: 'Your subscription payment of {{amount}} is due on {{dueDate}}',
+        type: NotificationType.BILLING_REMINDER,
+        variables: {
+          amount: 'currency',
+          dueDate: 'date'
+        }
+      },
+      create: {
         name: 'Billing Reminder Template',
         title: 'Payment Due: {{amount}}',
         message: 'Your subscription payment of {{amount}} is due on {{dueDate}}',

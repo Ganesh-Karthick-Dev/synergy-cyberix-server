@@ -24,6 +24,8 @@ model User {
   lastName          String?
   avatar            String?
   phone             String?
+  companyName       String?
+  location          String?
   role              UserRole   @default(USER)
   status            UserStatus @default(ACTIVE)
   emailVerified     Boolean    @default(false)
@@ -483,6 +485,8 @@ enum SecurityCategory {
   ACCESS_CONTROL
   ENCRYPTION
   MONITORING
+  CLOUD_SECURITY
+  OVERVIEW_SCAN
 }
 
 enum SeverityLevel {
