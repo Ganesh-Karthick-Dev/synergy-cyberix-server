@@ -232,14 +232,14 @@ export class RazorpayService {
         console.warn('[Razorpay Service] Payment verification successful, but not saved to database');
       }
 
-      // If payment is successful and there's a plan, create/update subscription
+      // If payment is successful and there's a plan, create purchased plan (queue system)
       if (paymentDetails.status === 'captured' && paymentOrder.planId) {
         try {
-          await this.activateSubscription(paymentOrder);
-          console.log('[Razorpay Service] ✅ Subscription activated/updated');
-        } catch (subscriptionError: any) {
-          console.warn('[Razorpay Service] ⚠️  Subscription activation failed:', subscriptionError.message);
-          console.warn('[Razorpay Service] Payment successful, but subscription not activated');
+          await this.createPurchasedPlan(paymentOrder);
+          console.log('[Razorpay Service] ✅ Purchased plan created in queue');
+        } catch (purchasedPlanError: any) {
+          console.warn('[Razorpay Service] ⚠️  Purchased plan creation failed:', purchasedPlanError.message);
+          console.warn('[Razorpay Service] Payment successful, but purchased plan not created');
         }
       }
 
@@ -252,53 +252,29 @@ export class RazorpayService {
   }
 
   /**
-   * Activate subscription after successful payment
+   * Create purchased plan after successful payment (queue system)
+   * Plans are not immediately activated - users can activate them later
    */
-  private async activateSubscription(paymentOrder: any): Promise<void> {
+  private async createPurchasedPlan(paymentOrder: any): Promise<void> {
     try {
-      // Check if user already has an active subscription for this plan
-      const existingSubscription = await prisma.userSubscription.findFirst({
-        where: {
+      if (!paymentOrder.planId) {
+        logger.warn('Payment order has no planId, skipping purchased plan creation');
+        return;
+      }
+
+      // Create purchased plan in queue (PENDING status)
+      await prisma.purchasedPlan.create({
+        data: {
           userId: paymentOrder.userId,
           planId: paymentOrder.planId,
-          status: 'ACTIVE'
+          paymentOrderId: paymentOrder.id,
+          status: 'PENDING', // Will be activated by user later
         }
       });
 
-      if (existingSubscription) {
-        // Extend existing subscription
-        const currentEndDate = existingSubscription.endDate || new Date();
-        const newEndDate = this.calculateEndDate(currentEndDate, paymentOrder.plan.billingCycle);
-
-        await prisma.userSubscription.update({
-          where: { id: existingSubscription.id },
-          data: {
-            endDate: newEndDate,
-            updatedAt: new Date()
-          }
-        });
-
-        logger.info(`Extended subscription for user ${paymentOrder.userId}, plan ${paymentOrder.planId}`);
-      } else {
-        // Create new subscription
-        const endDate = this.calculateEndDate(new Date(), paymentOrder.plan.billingCycle);
-
-        await prisma.userSubscription.create({
-          data: {
-            userId: paymentOrder.userId,
-            planId: paymentOrder.planId,
-            status: 'ACTIVE',
-            startDate: new Date(),
-            endDate: endDate,
-            autoRenew: true,
-            paymentMethod: 'RAZORPAY'
-          }
-        });
-
-        logger.info(`Created new subscription for user ${paymentOrder.userId}, plan ${paymentOrder.planId}`);
-      }
+      logger.info(`Created purchased plan for user ${paymentOrder.userId}, plan ${paymentOrder.planId}`);
     } catch (error: any) {
-      logger.error('Error activating subscription:', error);
+      logger.error('Error creating purchased plan:', error);
       // Don't throw error here as payment was successful
     }
   }

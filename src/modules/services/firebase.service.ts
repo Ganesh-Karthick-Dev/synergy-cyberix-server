@@ -111,16 +111,35 @@ export class FirebaseService {
    */
   async removeFcmToken(userId: string, fcmToken: string): Promise<void> {
     try {
-      await prisma.userFcmToken.updateMany({
+      // Find the token first to verify it exists and belongs to this user
+      const tokenRecord = await prisma.userFcmToken.findFirst({
         where: {
           userId,
           fcmToken,
+          isActive: true,
+        },
+      });
+
+      if (!tokenRecord) {
+        logger.warn('FCM token not found or already inactive', { userId, tokenPrefix: fcmToken.substring(0, 20) });
+        return; // Token doesn't exist or already removed - not an error
+      }
+
+      // Deactivate the specific token (only this device instance)
+      await prisma.userFcmToken.update({
+        where: {
+          id: tokenRecord.id,
         },
         data: {
           isActive: false,
         },
       });
-      logger.info('Deactivated FCM token', { userId });
+      
+      logger.info('Deactivated FCM token for device', { 
+        userId, 
+        tokenId: tokenRecord.id,
+        deviceInfo: tokenRecord.deviceInfo,
+      });
     } catch (error) {
       logger.error('Failed to remove FCM token', { error, userId });
       throw new CustomError('Failed to remove FCM token', 500);
@@ -208,17 +227,17 @@ export class FirebaseService {
           notification: {
             title: payload.title,
             body: payload.body,
-            icon: payload.icon || '/icon-192x192.png',
-            badge: payload.badge || '/icon-192x192.png',
+            icon: payload.icon || '/favicon.ico',
+            badge: payload.badge || '/favicon.ico',
             image: payload.image,
-            requireInteraction: true,
+            requireInteraction: false, // Allow notifications to auto-dismiss
             actions: payload.clickAction ? [{
               action: 'open',
               title: 'Open',
             }] : undefined,
           },
           fcmOptions: {
-            link: payload.clickAction,
+            link: payload.clickAction || '/',
           },
         },
         android: {

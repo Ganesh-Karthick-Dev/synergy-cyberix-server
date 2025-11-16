@@ -37,11 +37,13 @@ model User {
   // Relations
   sessions        Session[]
   subscriptions   UserSubscription[]
+  purchasedPlans  PurchasedPlan[]
   paymentOrders   PaymentOrder[]
   payments        Payment[]
   projects        Project[]
   securityReports SecurityReport[]
   notifications   Notification[]
+  userNotifications UserNotification[]
   loginLogs       LoginLog[]
   apiKeys         ApiKey[]
   auditLogs       AuditLog[]
@@ -118,6 +120,7 @@ model PaymentOrder {
   user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   plan ServicePlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
   payments Payment[]
+  purchasedPlan PurchasedPlan?
 
   @@map("payment_orders")
 }
@@ -172,6 +175,7 @@ model ServicePlan {
 
   // Relations
   subscriptions UserSubscription[]
+  purchasedPlans PurchasedPlan[]
   paymentOrders PaymentOrder[]
 
   @@map("service_plans")
@@ -192,9 +196,35 @@ model UserSubscription {
   // Relations
   user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   plan ServicePlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  purchasedFrom   PurchasedPlan?   @relation(fields: [purchasedPlanId], references: [id], onDelete: SetNull)
+  purchasedPlanId String?          @unique // One-to-one relation with PurchasedPlan
 
   @@unique([userId, planId])
   @@map("user_subscriptions")
+}
+
+// Purchased plans queue - stores plans that users have purchased but not yet activated
+model PurchasedPlan {
+  id            String             @id @default(cuid())
+  userId        String
+  planId        String
+  paymentOrderId String             @unique // Link to payment order
+  status        PurchasedPlanStatus @default(PENDING) // PENDING, ACTIVATED, CANCELLED
+  scheduledActivationDate DateTime? // When to auto-activate (if scheduled)
+  activatedAt   DateTime?          // When it was activated
+  activatedSubscriptionId String?  // Link to activated subscription
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  // Relations
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan         ServicePlan      @relation(fields: [planId], references: [id], onDelete: Cascade)
+  paymentOrder PaymentOrder     @relation(fields: [paymentOrderId], references: [id], onDelete: Cascade)
+  subscription UserSubscription?
+
+  @@index([userId, status])
+  @@index([userId, createdAt])
+  @@map("purchased_plans")
 }
 
 // ==================== PROJECTS ====================
@@ -352,6 +382,30 @@ model Notification {
   @@map("notifications")
 }
 
+// User notifications - stores notifications sent from admin panel for each user
+model UserNotification {
+  id               String   @id @default(cuid())
+  userId           String
+  pushNotificationId String // Link to the PushNotification that was sent
+  title            String
+  message          String
+  type             PushNotificationType
+  imageUrl         String?
+  data             Json? // Additional notification data
+  isRead           Boolean  @default(false)
+  readAt           DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  // Relations
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pushNotification PushNotification @relation(fields: [pushNotificationId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+  @@map("user_notifications")
+}
+
 model UserFcmToken {
   id         String    @id @default(cuid())
   userId     String
@@ -407,6 +461,7 @@ model PushNotification {
   // Relations
   createdBy   User?                @relation(fields: [createdById], references: [id])
   createdById String?
+  userNotifications UserNotification[]
 
   @@map("push_notifications")
 }
@@ -562,4 +617,10 @@ enum PushNotificationStatus {
   SCHEDULED
   SENT
   CANCELLED
+}
+
+enum PurchasedPlanStatus {
+  PENDING      // Purchased but not activated
+  ACTIVATED    // Activated and converted to subscription
+  CANCELLED    // Cancelled/refunded
 }

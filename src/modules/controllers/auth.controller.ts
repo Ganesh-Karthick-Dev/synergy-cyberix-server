@@ -34,9 +34,10 @@ export class AuthController {
   ])
   async login(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { email, password, deviceInfo } = req.body;
+      const { email, password, deviceInfo, fcmToken } = req.body;
 
       console.log('req.body', req.body);
+      console.log('🟢 [Login] FCM token in request:', fcmToken ? `${fcmToken.substring(0, 20)}...` : 'NOT PROVIDED');
 
     // Check if user is blocked due to failed attempts (only in production mode)
     if (config.security.loginBlocking) {
@@ -172,6 +173,34 @@ export class AuthController {
       path: '/',
     });
     console.log('🟢 [Login] Set isAuthenticated cookie');
+
+    // Store FCM token if provided
+    if (fcmToken) {
+      try {
+        console.log('🟢 [Login] Attempting to store FCM token for user:', user.id);
+        const { FirebaseService } = await import('../services/firebase.service');
+        const firebaseService = new FirebaseService();
+        
+        await firebaseService.storeFcmToken(user.id, fcmToken, {
+          userAgent: req.get('User-Agent'),
+          ipAddress: req.ip,
+          deviceInfo: deviceInfo || req.get('User-Agent'),
+        });
+        
+        console.log('🟢 [Login] ✅ FCM token stored successfully in database');
+      } catch (fcmError) {
+        // Log error but don't fail login if FCM storage fails
+        console.error('🟡 [Login] ❌ Failed to store FCM token (non-critical):', fcmError);
+        if (fcmError instanceof Error) {
+          console.error('🟡 [Login] FCM Error details:', {
+            message: fcmError.message,
+            stack: fcmError.stack,
+          });
+        }
+      }
+    } else {
+      console.log('🟡 [Login] No FCM token provided in login request');
+    }
 
     // Clear any existing login block on successful login
     await this.authService.clearLoginBlock(email);

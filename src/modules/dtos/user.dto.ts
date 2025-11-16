@@ -111,6 +111,10 @@ export class LoginDto {
   deviceInfo?: string;
 
   @IsOptional()
+  @IsString({ message: 'FCM token must be a string' })
+  fcmToken?: string;
+
+  @IsOptional()
   @IsBoolean({ message: 'Remember me must be a boolean' })
   rememberMe?: boolean;
 }

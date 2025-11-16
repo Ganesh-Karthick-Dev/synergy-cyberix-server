@@ -2,8 +2,11 @@ import { Request, Response } from 'express';
 import { Controller, Get, Post, Put, Delete } from '../../decorators/controller.decorator';
 import { Validate } from '../../decorators/validation.decorator';
 import { Service } from '../../decorators/service.decorator';
+import { Use } from '../../decorators/middleware.decorator';
+import { authenticate } from '../../middlewares/auth.middleware';
 import { ApiResponse } from '../../types';
 import { body } from 'express-validator';
+import { Prisma } from '@prisma/client';
 import { FirebaseService } from '../services/firebase.service';
 import { prisma } from '../../config/db';
 import { logger } from '../../utils/logger';
@@ -312,6 +315,15 @@ export class NotificationsController {
   async sendNotification(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
+      
+      if (!id) {
+        res.status(400).json({
+          success: false,
+          error: { message: 'Notification ID is required', statusCode: 400 }
+        });
+        return;
+      }
+
       const firebaseService = new FirebaseService();
 
       // Fetch notification from database
@@ -414,6 +426,34 @@ export class NotificationsController {
         image: notification.imageUrl ?? undefined,
       });
 
+      // Create UserNotification records for each target user
+      // id is guaranteed to be a string at this point due to the check above
+      const notificationId: string = id;
+      const userNotifications = targetUserIds.map(userId => {
+        const notificationData: any = {
+          userId,
+          pushNotificationId: notificationId,
+          title: notification.title,
+          message: notification.message,
+          type: notification.type,
+          imageUrl: notification.imageUrl ?? null,
+          isRead: false,
+        };
+        
+        // Handle data field - Prisma Json type doesn't accept null, use undefined instead
+        if (notification.data !== null && notification.data !== undefined) {
+          notificationData.data = notification.data;
+        }
+        
+        return notificationData;
+      });
+
+      // Bulk create user notifications
+      await prisma.userNotification.createMany({
+        data: userNotifications,
+        skipDuplicates: true, // Skip if notification already exists for user
+      });
+
       // Update notification in database with sent status
       await prisma.pushNotification.update({
         where: { id },
@@ -427,6 +467,7 @@ export class NotificationsController {
       logger.info('Push notification sent', {
         notificationId: id,
         targetUsers: targetUserIds.length,
+        userNotificationsCreated: userNotifications.length,
         targetTokens: pushResult.successCount + pushResult.failureCount,
         successCount: pushResult.successCount,
         failureCount: pushResult.failureCount,
@@ -452,6 +493,139 @@ export class NotificationsController {
           message: error instanceof Error ? error.message : 'Failed to send notification',
           statusCode: 500
         }
+      });
+    }
+  }
+
+  @Get('/user/notifications')
+  @Use(authenticate)
+  async getUserNotifications(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const { page = '1', limit = '20', unreadOnly = 'false' } = req.query;
+
+      const pageNum = parseInt(page as string, 10);
+      const limitNum = parseInt(limit as string, 10);
+      const skip = (pageNum - 1) * limitNum;
+      const onlyUnread = unreadOnly === 'true';
+
+      const where: any = { userId };
+      if (onlyUnread) {
+        where.isRead = false;
+      }
+
+      const [notifications, total] = await Promise.all([
+        prisma.userNotification.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limitNum,
+        }),
+        prisma.userNotification.count({ where }),
+      ]);
+
+      const unreadCount = await prisma.userNotification.count({
+        where: { userId, isRead: false },
+      });
+
+      const response: ApiResponse = {
+        success: true,
+        data: {
+          notifications: notifications.map(n => ({
+            id: n.id,
+            title: n.title,
+            message: n.message,
+            type: n.type,
+            imageUrl: n.imageUrl,
+            data: n.data,
+            isRead: n.isRead,
+            readAt: n.readAt,
+            createdAt: n.createdAt,
+          })),
+          pagination: {
+            page: pageNum,
+            limit: limitNum,
+            total,
+            totalPages: Math.ceil(total / limitNum),
+          },
+          unreadCount,
+        },
+        message: 'User notifications retrieved successfully',
+      };
+
+      res.json(response);
+    } catch (error) {
+      logger.error('Failed to retrieve user notifications', { error });
+      res.status(500).json({
+        success: false,
+        error: {
+          message: error instanceof Error ? error.message : 'Failed to retrieve user notifications',
+          statusCode: 500,
+        },
+      });
+    }
+  }
+
+  @Put('/user/notifications/:id/read')
+  @Use(authenticate)
+  async markNotificationAsRead(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const { id } = req.params;
+
+      const notification = await prisma.userNotification.findFirst({
+        where: { id, userId },
+      });
+
+      if (!notification) {
+        res.status(404).json({
+          success: false,
+          error: { message: 'Notification not found', statusCode: 404 },
+        });
+        return;
+      }
+
+      await prisma.userNotification.update({
+        where: { id },
+        data: { isRead: true, readAt: new Date() },
+      });
+
+      res.json({ success: true, message: 'Notification marked as read' });
+    } catch (error) {
+      logger.error('Failed to mark notification as read', { error });
+      res.status(500).json({
+        success: false,
+        error: {
+          message: error instanceof Error ? error.message : 'Failed to mark notification as read',
+          statusCode: 500,
+        },
+      });
+    }
+  }
+
+  @Put('/user/notifications/read-all')
+  @Use(authenticate)
+  async markAllNotificationsAsRead(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const result = await prisma.userNotification.updateMany({
+        where: { userId, isRead: false },
+        data: { isRead: true, readAt: new Date() },
+      });
+
+      res.json({
+        success: true,
+        message: `${result.count} notifications marked as read`,
+        data: { updatedCount: result.count },
+      });
+    } catch (error) {
+      logger.error('Failed to mark all notifications as read', { error });
+      res.status(500).json({
+        success: false,
+        error: {
+          message: error instanceof Error ? error.message : 'Failed to mark all notifications as read',
+          statusCode: 500,
+        },
       });
     }
   }

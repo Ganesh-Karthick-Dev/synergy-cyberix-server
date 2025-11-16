@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { Controller, Post, Delete } from '../../decorators/controller.decorator';
 import { Validate } from '../../decorators/validation.decorator';
 import { Service } from '../../decorators/service.decorator';
+import { Use } from '../../decorators/middleware.decorator';
 import { ApiResponse } from '../../types';
 import { body } from 'express-validator';
 import { FirebaseService } from '../services/firebase.service';
@@ -11,6 +12,7 @@ import { authenticate } from '../../middlewares/auth.middleware';
 @Controller('/api/fcm')
 export class FcmController {
   @Post('/token')
+  @Use(authenticate)
   @Validate([
     body('fcmToken').notEmpty().withMessage('FCM token is required'),
   ])
@@ -45,6 +47,7 @@ export class FcmController {
   }
 
   @Delete('/token')
+  @Use(authenticate)
   @Validate([
     body('fcmToken').notEmpty().withMessage('FCM token is required'),
   ])
@@ -53,8 +56,13 @@ export class FcmController {
       const { fcmToken } = req.body;
       const userId = req.user!.id;
 
+      console.log('🟢 [FCM Controller] Removing FCM token for user:', userId);
+      console.log('🟢 [FCM Controller] Token to remove:', fcmToken ? `${fcmToken.substring(0, 20)}...` : 'NOT PROVIDED');
+
       const firebaseService = new FirebaseService();
       await firebaseService.removeFcmToken(userId, fcmToken);
+
+      console.log('🟢 [FCM Controller] ✅ FCM token removed successfully from database');
 
       const response: ApiResponse = {
         success: true,
@@ -63,6 +71,7 @@ export class FcmController {
 
       res.json(response);
     } catch (error) {
+      console.error('🟡 [FCM Controller] ❌ Failed to remove FCM token:', error);
       res.status(500).json({
         success: false,
         error: {
@@ -74,6 +83,7 @@ export class FcmController {
   }
 
   @Delete('/tokens/all')
+  @Use(authenticate)
   async removeAllTokens(req: Request, res: Response): Promise<void> {
     try {
       const userId = req.user!.id;
