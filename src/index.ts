@@ -37,6 +37,7 @@ import { PaymentController } from './modules/controllers/payment.controller';
 import { ProjectController } from './modules/controllers/project.controller';
 import { SecurityReportController } from './modules/controllers/security-report.controller';
 import { ContactController } from './modules/controllers/contact.controller';
+import { ChatController } from './modules/controllers/chat.controller';
 import { InvoiceService } from './modules/services/invoice.service';
 import { PlanRestrictionService } from './modules/services/plan-restriction.service';
 import { ProjectService } from './modules/services/project.service';
@@ -146,6 +147,7 @@ class Server {
     container.autoRegister(ProjectController);
     container.autoRegister(SecurityReportController);
     container.autoRegister(ContactController);
+    container.autoRegister(ChatController);
 
     // Health check endpoints (both /health and /api/health for compatibility)
     const healthCheckHandler = (req: express.Request, res: express.Response) => {
@@ -175,7 +177,8 @@ class Server {
       PushNotificationController,
       NotificationsController,
       AdsController,
-      GitHubController
+      GitHubController,
+      ChatController
     ]);
     this.app.use('/', apiRoutes);
   }

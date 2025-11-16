@@ -14,4 +14,7 @@ export * from './security-tools.service';
 // Push notification services
 export * from './push-notification.service';
 
+// Chat services
+export * from './chat.service';
+
 // Post services removed - not needed for cybersecurity server
