@@ -16,4 +16,7 @@ export * from './security-report.controller';
 // Push Notification controllers
 export * from './push-notification.controller';
 
+// Chat controllers
+export * from './chat.controller';
+
 // Post controllers removed - not needed for cybersecurity server
