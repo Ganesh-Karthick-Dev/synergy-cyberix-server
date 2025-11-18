@@ -9,6 +9,7 @@ export class Container {
     this.services.set(token, { factory, singleton });
   }
 
+  
   resolve<T>(token: string): T {
     const service = this.services.get(token);
     if (!service) {
