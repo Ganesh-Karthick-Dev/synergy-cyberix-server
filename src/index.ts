@@ -178,7 +178,8 @@ class Server {
       NotificationsController,
       AdsController,
       GitHubController,
-      ChatController
+      ChatController,
+      ContactController
     ]);
     this.app.use('/', apiRoutes);
   }
